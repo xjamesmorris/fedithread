@@ -1,5 +1,5 @@
 import { parseStatusUrl } from './parse.js';
-import { collectThread, buildTree, classifyNodes } from './thread.js';
+import { collectThread, buildTree, classifyNodes, orphanGroups } from './thread.js';
 import { renderThread, renderError } from './render.js';
 import { getHomeInstance, setHomeInstance, replyUrl } from './settings.js';
 import { statusContentHtml } from './sanitize.js';
@@ -79,7 +79,8 @@ async function load(text, { push = true } = {}) {
     toolbar.hidden = false;
 
     const notes = [`${result.statuses.length} posts`, `${forks.length} fork${forks.length === 1 ? '' : 's'}`];
-    if (tree.orphans) notes.push(`${tree.orphans} unreachable (parent deleted or private)`);
+    const unplaced = orphanGroups(tree, result.root.id).reduce((n, g) => n + g.replies.length, 0);
+    if (unplaced) notes.push(`${unplaced} ${unplaced === 1 ? 'reply' : 'replies'} to posts that could not be fetched, shown at the end`);
     if (result.missing) notes.push(`about ${result.missing} more ${result.missing === 1 ? 'reply' : 'replies'} not reachable anonymously`);
     if (result.truncated) notes.push('request budget hit, thread may be incomplete');
     setStatus(notes.join(' · '));
@@ -142,7 +143,6 @@ function saveThread(format) {
     includeForks: saveForks.checked,
     content: statusContentHtml,
     missing: result.missing,
-    orphans: tree.orphans,
   });
   if (format === 'html') download(suggestedFileName(model, 'html'), toHtml(model), 'text/html;charset=utf-8');
   else download(suggestedFileName(model, 'md'), toMarkdown(model), 'text/markdown;charset=utf-8');

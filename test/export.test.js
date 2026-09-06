@@ -246,3 +246,23 @@ test('the footer names the instance the root post lives on, via the queried one 
   assert.ok(toHtml(m).includes('<footer>Exported from legal.social via mastodon.social with fedithread. 1 post.</footer>'));
   assert.equal(model().via, '');
 });
+
+test('orphaned replies export under a missing-post marker and are counted in the notes', () => {
+  t = 0;
+  const list = [
+    st('1', null, 'op', '<p>Root.</p>'),
+    st('5', 'gone', 'bob', '<p>Answer to something we never saw.</p>', { in_reply_to_account_id: 'op' }),
+    st('6', '5', 'carol', '<p>And a reply to that.</p>'),
+  ];
+  const tree = buildTree(list);
+  const main = classifyNodes(tree, '1', '1');
+  const m = buildExport(tree, main, { rootId: '1', host: 'h.example', content: (s) => s.content });
+  assert.deepEqual(m.replies.map((r) => [r.id, r.depth, r.replyTo.missing === true]), [['5', 0, true], ['6', 1, false]]);
+  assert.equal(m.replies[0].replyTo.name, 'a post by OP');
+  assert.deepEqual(m.notes, ['1 reply answers a post that could not be fetched']);
+  assert.ok(toMarkdown(m).includes('replying to a post by OP that could not be fetched</sub>'));
+  assert.ok(toHtml(m).includes('replying to a post by OP that could not be fetched</p>'));
+  const without = buildExport(tree, main, { rootId: '1', host: 'h.example', includeForks: false, content: (s) => s.content });
+  assert.equal(without.replies.length, 0);
+  assert.deepEqual(without.notes, ['1 reply answers a post that could not be fetched']);
+});

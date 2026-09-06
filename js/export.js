@@ -5,6 +5,8 @@
 // re-parsed here with a small tokenizer that only has to cope with the
 // well-formed, allowlisted markup our sanitiser emits.
 
+import { orphanGroups, findAccount } from './thread.js';
+
 // ---------------------------------------------------------------- HTML parsing
 
 const VOID = new Set(['br', 'img', 'hr']);
@@ -234,7 +236,7 @@ function postOf(status, host, content) {
 // Walk the tree in the same order as the page: main-line posts in sequence,
 // each followed by its fork subtrees (depth first). Forks are collected flat
 // with a depth and a replyTo pointer, so each format can nest or link.
-export function buildExport(tree, main, { rootId, host, includeForks = true, content, missing = 0, orphans = 0 }) {
+export function buildExport(tree, main, { rootId, host, includeForks = true, content, missing = 0 }) {
   const root = tree.byId.get(rootId);
   if (!root) throw new Error('root status missing');
   const posts = [];
@@ -273,12 +275,30 @@ export function buildExport(tree, main, { rootId, host, includeForks = true, con
   };
   walkMain(root);
 
+  // Replies whose parent we never fetched, after the forks, under a
+  // "missing post" marker instead of a link.
+  const orphans = orphanGroups(tree, rootId);
+  let unplaced = 0;
+  if (includeForks) {
+    for (const g of orphans) {
+      const author = findAccount(tree, g.accountId);
+      const replyTo = { id: g.parentId, name: author ? `a post by ${stripShortcodes(author.display_name, author.emojis) || author.username || ''}`.trim() : 'a post', url: '', missing: true };
+      for (const o of g.replies) {
+        unplaced++;
+        replies.push({ ...postOf(o, host, content), depth: 0, replyTo });
+        collectForks(o, 1);
+      }
+    }
+  } else {
+    unplaced = orphans.reduce((n, g) => n + g.replies.length, 0);
+  }
+
   const rootPost = posts[0];
   let origin = host;
   try { origin = new URL(rootPost.url).host || host; } catch { /* keep the queried host */ }
   const notes = [];
   if (missing) notes.push(`about ${missing} more ${missing === 1 ? 'reply was' : 'replies were'} not reachable anonymously`);
-  if (orphans) notes.push(`${orphans} ${orphans === 1 ? 'reply' : 'replies'} could not be placed`);
+  if (unplaced) notes.push(`${unplaced} ${unplaced === 1 ? 'reply answers a post' : 'replies answer posts'} that could not be fetched`);
   return {
     title: threadTitle(root, host),
     author: rootPost.author,
@@ -333,7 +353,8 @@ function mdMeta(p, { showAuthor, replyTo }) {
   const bits = [];
   if (showAuthor) bits.push(mdWho(p));
   bits.push(p.url ? `[${p.date}](${mdUrl(p.url)})` : p.date);
-  if (replyTo) bits.push(replyTo.url ? `replying to [${escapeMd(replyTo.name)}](${mdUrl(replyTo.url)})` : `replying to ${escapeMd(replyTo.name)}`);
+  if (replyTo?.missing) bits.push(`replying to ${escapeMd(replyTo.name)} that could not be fetched`);
+  else if (replyTo) bits.push(replyTo.url ? `replying to [${escapeMd(replyTo.name)}](${mdUrl(replyTo.url)})` : `replying to ${escapeMd(replyTo.name)}`);
   if (p.visibility) bits.push(p.visibility);
   if (p.edited) bits.push('edited');
   return `<sub>${bits.join(' · ')}</sub>`;
@@ -442,7 +463,8 @@ function htmlMeta(p, { showAuthor, replyTo }) {
   if (showAuthor) bits.push(htmlWho(p));
   const time = `<time datetime="${escHtml(p.iso || '')}">${escHtml(p.date)}</time>`;
   bits.push(p.url ? `<a href="${escHtml(p.url)}">${time}</a>` : time);
-  if (replyTo) bits.push(`replying to <a href="#s-${escHtml(replyTo.id)}">${escHtml(replyTo.name)}</a>`);
+  if (replyTo?.missing) bits.push(`replying to ${escHtml(replyTo.name)} that could not be fetched`);
+  else if (replyTo) bits.push(`replying to <a href="#s-${escHtml(replyTo.id)}">${escHtml(replyTo.name)}</a>`);
   if (p.visibility) bits.push(escHtml(p.visibility));
   if (p.edited) bits.push('edited');
   return `<p class="meta">${bits.join(' · ')}</p>`;

@@ -128,6 +128,14 @@ img.emoji { height: 1.2em; width: auto; vertical-align: -0.25em; }
 .card footer .actions { margin-left: auto; display: flex; gap: .9rem; }
 .card footer .actions a { text-decoration: none; }
 
+/* Placeholders for posts we could not fetch, and the section that holds them */
+.card.placeholder { border-style: dashed; background: transparent; }
+.card.placeholder .name { color: var(--muted); }
+.card.placeholder .content { font-size: .9rem; }
+.avatar-missing { display: flex; align-items: center; justify-content: center; color: var(--muted); font-weight: 600; }
+.unplaced { margin-top: 1.5rem; }
+.unplaced h2 { font-size: .95rem; font-weight: 600; color: var(--muted); margin: 0 0 .6rem; }
+
 /* Forks */
 details.forks { margin: 0 0 .6rem .5rem; }
 details.forks > summary {

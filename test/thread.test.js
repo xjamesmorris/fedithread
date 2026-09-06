@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildTree, classifyNodes, countDescendants } from '../js/thread.js';
+import { buildTree, classifyNodes, countDescendants, orphanGroups, findAccount } from '../js/thread.js';
 
 let t = 0;
 const st = (id, parent, acct, extra = {}) => ({
@@ -66,4 +66,23 @@ test('countDescendants counts the whole subtree', () => {
   assert.equal(countDescendants(tree, '4'), 3);
   assert.equal(countDescendants(tree, '1'), 7);
   assert.equal(countDescendants(tree, '5'), 0);
+});
+
+test('orphanGroups groups replies by missing parent and skips the root', () => {
+  t = 0;
+  const list = [
+    st('a', 'gone', 'x'),          // root whose own parent is missing
+    st('b', 'a', 'y'),
+    st('c', 'p1', 'y', { in_reply_to_account_id: 'x' }),
+    st('d', 'c', 'z'),             // child of an orphan stays attached
+    st('e', 'p1', 'z', { in_reply_to_account_id: 'x' }),
+    st('f', 'p2', 'x'),
+  ];
+  const tree = buildTree(list);
+  const groups = orphanGroups(tree, 'a');
+  assert.deepEqual(groups.map((g) => [g.parentId, g.accountId, g.replies.map((r) => r.id)]), [['p1', 'x', ['c', 'e']], ['p2', null, ['f']]]);
+  assert.deepEqual(tree.children.get('c').map((s) => s.id), ['d']);
+  assert.equal(findAccount(tree, 'x').acct, 'x');
+  assert.equal(findAccount(tree, 'nobody'), null);
+  assert.equal(findAccount(tree, null), null);
 });

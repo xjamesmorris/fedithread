@@ -80,7 +80,7 @@ Other findings from live testing:
 ## How to verify
 
 ```
-npm test                          # 64 tests, no network
+npm test                          # 66 tests, no network
 python3 -m http.server 8000       # ES modules do not load over file://
 ```
 
@@ -103,8 +103,15 @@ Visual checks: see "Visual checks without a browser driver" below.
 - Forks render lazily on first expand, but "Expand all forks" walks the DOM
   repeatedly until no closed groups remain. Fine for hundreds of posts, untested
   for thousands.
-- Orphans (replies whose parent we never saw) are dropped and only counted in
-  the status line. The plan mentioned a placeholder card; it was not built.
+- Orphans (replies whose parent we never saw) render at the end under a
+  "Replies to posts that could not be fetched" heading, one dashed
+  placeholder card per missing parent (`orphanGroups` in `thread.js`), with
+  the replies as a normal fork group below it. The placeholder names the
+  missing post's author when `in_reply_to_account_id` matches an account we
+  have seen. A root whose own parent is missing gets an "Earlier post not
+  available" placeholder above it. Exports list orphans after the forks as
+  "replying to a post by X that could not be fetched". Where an orphan really
+  belongs in the thread is unknown, so the end is the only honest place.
 - The only setting is the home instance. It lives under the `localStorage`
   key `fedithread.home`.
 - Fork groups summarise the first three authors and "N more". No per-fork

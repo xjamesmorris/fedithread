@@ -163,6 +163,27 @@ export function classifyNodes(tree, rootId, startId) {
   return main;
 }
 
+// Pure: replies whose parent we never received, grouped by the missing parent
+// id in time order. Each entry's `replies` are subtree roots; their own
+// children are already attached in the tree. The thread root is excluded
+// even when its own parent is missing (ancestor cap or a deleted ancestor).
+export function orphanGroups(tree, rootId) {
+  const groups = new Map();
+  for (const s of tree.roots) {
+    if (s.id === rootId || !s.in_reply_to_id) continue;
+    if (!groups.has(s.in_reply_to_id)) groups.set(s.in_reply_to_id, { parentId: s.in_reply_to_id, accountId: s.in_reply_to_account_id || null, replies: [] });
+    groups.get(s.in_reply_to_id).replies.push(s);
+  }
+  return [...groups.values()];
+}
+
+// Pure: the account object for an id, if any status in the tree carries it.
+export function findAccount(tree, accountId) {
+  if (!accountId) return null;
+  for (const s of tree.byId.values()) if (s.account?.id === accountId) return s.account;
+  return null;
+}
+
 export function countDescendants(tree, id) {
   let n = 0;
   const stack = [...(tree.children.get(id) || [])];

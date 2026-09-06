@@ -90,8 +90,9 @@ npm test
   says roughly how many are missing.
 - Only the replies known to the instance in the link are shown. Remote replies the
   instance has never seen will be missing.
+- Replies whose parent could not be fetched (deleted, private, or not visible
+  anonymously) are shown at the end under a placeholder card for the missing post.
 
 ## Future
 
-Possible next steps: a placeholder card for replies whose parent is missing,
-and richer fork previews.
+Possible next steps: richer fork previews.

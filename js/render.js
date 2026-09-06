@@ -1,5 +1,5 @@
 import { sanitizeHtml, applyCustomEmoji, textWithEmoji } from './sanitize.js';
-import { countDescendants } from './thread.js';
+import { countDescendants, orphanGroups, findAccount } from './thread.js';
 import { getHomeInstance, replyUrl } from './settings.js';
 
 const h = (tag, attrs = {}, ...children) => {
@@ -115,44 +115,81 @@ function renderCard(status, { host, isStart }) {
   return card;
 }
 
+// A stand-in for a post we could not fetch: deleted, private, or not visible
+// from the instance we asked. `account` is the author when we know them.
+function renderPlaceholder({ account, host, kind }) {
+  const who = account ? h('span', { class: 'handle' }, handleOf(account, host)) : null;
+  const title = kind === 'ancestor' ? 'Earlier post not available' : 'Post not available';
+  return h('article', { class: 'card placeholder', role: 'note' },
+    h('header', {},
+      h('div', { class: 'avatar avatar-missing', 'aria-hidden': 'true' }, '?'),
+      h('div', { class: 'who' }, h('span', { class: 'name' }, title), who)),
+    h('div', { class: 'content muted' },
+      kind === 'ancestor'
+        ? `The post this thread starts from is a reply, but its parent could not be fetched from ${host}. It may be deleted, private, or beyond the anonymous ancestor limit.`
+        : `The replies below answer a post that could not be fetched from ${host}. It may be deleted, private, or not visible anonymously.`));
+}
+
 // Render the tree. Main-line children go inline; fork children are grouped
-// under a collapsed toggle that renders lazily on first expand.
+// under a collapsed toggle that renders lazily on first expand. Replies whose
+// parent is missing go under a placeholder card at the end.
 export function renderThread(tree, main, { host, rootId, startId }) {
   const container = h('div', { class: 'thread' });
   const forks = [];
 
+  const forkGroup = (forkKids, depth) => {
+    const total = forkKids.reduce((n, k) => n + 1 + countDescendants(tree, k.id), 0);
+    const authors = [...new Set(forkKids.map((k) => handleOf(k.account, host)))];
+    const shown = authors.slice(0, 3).join(', ') + (authors.length > 3 ? ` and ${authors.length - 3} more` : '');
+    const label = `${total} ${total === 1 ? 'reply' : 'replies'} from ${shown}`;
+    const details = h('details', { class: 'forks' }, h('summary', {}, label));
+    const inner = h('div', { class: 'fork-children' });
+    details.append(inner);
+    let rendered = false;
+    details.addEventListener('toggle', () => {
+      if (details.open && !rendered) {
+        rendered = true;
+        for (const k of forkKids) inner.append(renderNode(k, depth + 1));
+      }
+    });
+    forks.push(details);
+    return details;
+  };
+
+  // Children of one parent: fork group first, then main-line children inline.
+  const renderChildren = (kids, depth) => {
+    const out = [];
+    const forkKids = kids.filter((k) => !main.has(k.id));
+    if (forkKids.length) out.push(forkGroup(forkKids, depth));
+    for (const k of kids) if (main.has(k.id)) out.push(renderNode(k, depth));
+    return out;
+  };
+
   const renderNode = (status, depth) => {
     const wrap = h('div', { class: `node${main.has(status.id) ? ' main' : ' fork'}` });
     wrap.append(renderCard(status, { host, isStart: status.id === startId }));
-
-    const kids = tree.children.get(status.id) || [];
-    const mainKids = kids.filter((k) => main.has(k.id));
-    const forkKids = kids.filter((k) => !main.has(k.id));
-
-    if (forkKids.length) {
-      const total = forkKids.reduce((n, k) => n + 1 + countDescendants(tree, k.id), 0);
-      const authors = [...new Set(forkKids.map((k) => handleOf(k.account, host)))];
-      const shown = authors.slice(0, 3).join(', ') + (authors.length > 3 ? ` and ${authors.length - 3} more` : '');
-      const label = `${total} ${total === 1 ? 'reply' : 'replies'} from ${shown}`;
-      const details = h('details', { class: 'forks' }, h('summary', {}, label));
-      const inner = h('div', { class: 'fork-children' });
-      details.append(inner);
-      let rendered = false;
-      details.addEventListener('toggle', () => {
-        if (details.open && !rendered) {
-          rendered = true;
-          for (const k of forkKids) inner.append(renderNode(k, depth + 1));
-        }
-      });
-      forks.push(details);
-      wrap.append(details);
-    }
-    for (const k of mainKids) wrap.append(renderNode(k, depth));
+    wrap.append(...renderChildren(tree.children.get(status.id) || [], depth));
     return wrap;
   };
 
   const root = tree.byId.get(rootId);
+  if (root.in_reply_to_id) {
+    container.append(h('div', { class: 'node fork' }, renderPlaceholder({ account: findAccount(tree, root.in_reply_to_account_id), host, kind: 'ancestor' })));
+  }
   container.append(renderNode(root, 0));
+
+  const orphans = orphanGroups(tree, rootId);
+  if (orphans.length) {
+    const section = h('section', { class: 'unplaced' },
+      h('h2', {}, `Replies to posts that could not be fetched`));
+    for (const g of orphans) {
+      const wrap = h('div', { class: 'node fork' });
+      wrap.append(renderPlaceholder({ account: findAccount(tree, g.accountId), host, kind: 'missing' }));
+      wrap.append(...renderChildren(g.replies, 0));
+      section.append(wrap);
+    }
+    container.append(section);
+  }
   return { element: container, forks };
 }
 
