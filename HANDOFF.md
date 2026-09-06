@@ -96,12 +96,7 @@ mastodon.social:
 - Error paths: an id like `1` on any host for 404, a tech.lgbt link for 401, a
   made-up host for the unreachable message.
 
-Visual checks were done with headless Firefox. Its `--screenshot` fires at the
-load event, before live fetches finish, so screenshots used a harness copy of
-`index.html` that replaces `window.fetch` with recorded responses. If you need
-that again, the harness lived in the session scratchpad, not in the repo; it is
-about 30 lines and easy to recreate. The `fedithread:rendered` event on
-`document` exists for exactly this kind of hook.
+Visual checks: see "Visual checks without a browser driver" below.
 
 ## Known gaps and rough edges
 
@@ -134,20 +129,27 @@ Mastodon-API servers may not implement `authorize_interaction`; Pleroma and
 Akkoma use different remote-interaction routes, which is a possible follow-up.
 Reading stays anonymous; OAuth remains out of scope.
 
-## Save as HTML / Markdown (done)
+## Save as HTML / Markdown (done 2026-09-06)
+
+Commits `1823614` (feature, together with the reply hand-off) and `f244f8d`
+(footer fix), both on `main` and deployed.
 
 Toolbar buttons "Save as HTML" and "Markdown" plus a "with forks" checkbox.
 `main.js` keeps the last rendered `{ tree, main, result, host }` and hands it
 to `buildExport` in `js/export.js`, then downloads the result through a Blob
 URL. Layout of both documents: title (first line of the root post, or its CW,
-80 chars max), byline, main-line posts as the article with a timestamp
-permalink under each, then a "Replies" section with the forks flattened in
-depth-first order. Each reply carries `depth` and `replyTo`; the HTML nests by
-indenting with a `--depth` variable and links `#s-<id>`, Markdown stays flat
-and links the parent's permalink. Sensitive media becomes a link instead of an
-inline image. Content warnings render as a bold "CW:" line above the body.
-The footer names the instance the root post lives on (from its permalink),
-"via" the queried instance when that differs.
+80 chars max, known custom emoji shortcodes stripped), byline, main-line
+posts as the article with a timestamp permalink under each, then a "Replies"
+section with the forks flattened in depth-first order. Each reply carries
+`depth` and `replyTo`; the HTML nests by indenting with a `--depth` variable
+and links `#s-<id>`, Markdown stays flat and links the parent's permalink.
+Sensitive media becomes a link instead of an inline image. Content warnings
+render as a bold "CW:" line above the body. Markdown starts with YAML front
+matter (title, author, date, source). The HTML has embedded CSS with a dark
+scheme and no scripts. Images and emoji are linked from the instance, never
+embedded. The footer names the instance the root post lives on (from its
+permalink), "via" the queried instance when that differs, because the
+"not reachable anonymously" count depends on which server answered.
 
 `export.js` is pure so it can be tested in node. It cannot use the DOM
 sanitiser, so `statusContentHtml` in `sanitize.js` serialises the sanitised
@@ -160,14 +162,62 @@ Markdown escaping is deliberately moderate: `* [ ] < \` and backticks always,
 `_` only at word boundaries, `~~` when doubled, and `# > - + 1.` only at line
 start. `<` must always be escaped or a post could inject HTML into the
 document. Post headings are shifted down two levels so the document keeps h1
-and h2 for itself.
+and h2 for itself. Meta lines use `<sub>` because there is no Markdown for
+small text; renderers that strip HTML still show the content.
 
-Verified with the same headless Firefox harness as before (light and dark),
-with a fixture that had a code block, an image, a poll, a CW, custom emoji,
-an ellipsised link and a nested fork. The harness this time served the
-scratchpad on port 8001 with an `app` symlink to the checkout, so the harness
-page could import `app/js/main.js` and the real toolbar markup was spliced in
-from `index.html`.
+### Verified on live threads
+
+Both reference threads from "How to verify" were exported from real data:
+
+- Gargron birthday post: 59 posts in 5 requests, 1 main post, 58 replies, 2
+  of them nested; about 150 replies unreachable, reported in the footer. A
+  display name with an asterisk was escaped correctly, CJK and emoji passed
+  through, a Misskey-style permalink was kept.
+- malteengeler book thread: 14 posts in 6 requests, 6 main posts read as one
+  article with forks between them, 8 replies nested to depth 2, an image with
+  long alt text, hard line breaks, ellipsised links, umlauts folded in the
+  file name but kept in the title.
+
+The in-browser path (real sanitiser, Blob, anchor click) was exercised by
+replaying recorded API responses in the harness and capturing the download;
+the output matched the node run. The only thing not observed is the file
+save dialog itself, since there is no WebDriver on the build machine.
+
+### Export gaps
+
+- Forks are flat in Markdown; a deeply nested discussion loses its shape
+  there and only the "replying to" links recover it.
+- No option for main line only in HTML with forks collapsed; "with forks"
+  is all or nothing.
+- Titles are cut at 80 characters mid-phrase with an ellipsis.
+- The `Blob` download is a plain anchor click; Safari on iOS may open the
+  file instead of saving it. Untested.
+
+## Visual checks without a browser driver
+
+Headless Firefox `--screenshot` captures too early for live data: a shot of
+the deployed site with a `?url=` shows the "Fetching…" state, even though
+`main.js` awaits the first load at top level. What works, and what was used
+today:
+
+1. Record real responses from node: wrap `globalThis.fetch` around
+   `collectThread`, save `{url: {status, body}}` as
+   `window.FIXTURE = …` with `<` escaped as `\u003c`.
+2. Serve the scratchpad on a spare port with an `app` symlink to the
+   checkout. A harness page links `app/css/style.css`, imports
+   `app/js/main.js`, splices the real `#toolbar` markup out of `index.html`
+   with a regex, and replaces `window.fetch` with a lookup into the fixture
+   that returns plain objects whose `json()` resolves in a microtask.
+3. To capture a download, wrap `window.Blob` so the constructor records the
+   parts synchronously, and stub `URL.createObjectURL` and
+   `HTMLAnchorElement.prototype.click`. Then on `fedithread:rendered` click
+   the Save buttons and write the captured text into the page. Anything that
+   awaits `blob.text()` loses the race with the load event.
+4. Exported HTML files need none of this; serve and screenshot them directly.
+   Dark mode is `user_pref("ui.systemUsesDarkTheme", 1);` in the profile.
+
+The harness files live in the session scratchpad, not the repo; each is
+under 60 lines.
 
 ## Gotchas hit during the build
 
