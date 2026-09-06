@@ -2,7 +2,7 @@
 
 Status as of 2026-09-06. Live at https://xjamesmorris.github.io/fedithread/,
 source at https://github.com/xjamesmorris/fedithread, deployed by GitHub Pages
-from the `main` branch root. One commit so far.
+from the `main` branch root.
 
 ## What it does
 
@@ -29,15 +29,17 @@ outlined and scrolled into view. `?url=` makes any view shareable.
 
 | File | Role |
 | --- | --- |
-| `index.html` | Shell: form, status line, expand/collapse toolbar, thread container |
+| `index.html` | Shell: form, status line, toolbar (expand/collapse, Save as HTML/Markdown), thread container |
 | `css/style.css` | Layout and theme. Light and dark via `prefers-color-scheme` |
 | `js/parse.js` | `parseStatusUrl(text)` -> `{host, id}` or null. Pure, tested |
 | `js/api.js` | `getJson` with 15 s timeout and friendly error messages, `fetchStatus`, `fetchContext`, `fetchAccountStatuses`, `pLimit` |
 | `js/thread.js` | `collectThread` (network), `buildTree`, `classifyNodes`, `countDescendants` (pure, tested) |
 | `js/sanitize.js` | Allowlist sanitiser, custom emoji substitution |
-| `js/render.js` | Status cards, media, polls, content warnings, lazy fork groups |
+| `js/render.js` | Status cards, media, polls, content warnings, lazy fork groups, Reply and Open links |
+| `js/settings.js` | Home instance in `localStorage`, `normalizeHost`, `replyUrl` (pure, tested) |
+| `js/export.js` | `buildExport` (tree -> document model), `toHtml`, `toMarkdown`, `suggestedFileName`, plus a tiny HTML tokenizer and HTML-to-Markdown converter (pure, tested) |
 | `js/main.js` | Wiring, `?url=` deep links, history, progress text, `fedithread:rendered` event |
-| `test/*.test.js` | Parser cases, tree and main-line cases, collector against a mocked capped server |
+| `test/*.test.js` | Parser cases, tree and main-line cases, collector against a mocked capped server, export documents |
 
 Everything network-related lives in `collectThread`. Everything pure is
 exported separately so it can be tested without a browser or network.
@@ -78,7 +80,7 @@ Other findings from live testing:
 ## How to verify
 
 ```
-npm test                          # 33 tests, no network
+npm test                          # 63 tests, no network
 python3 -m http.server 8000       # ES modules do not load over file://
 ```
 
@@ -108,25 +110,62 @@ about 30 lines and easy to recreate. The `fedithread:rendered` event on
   for thousands.
 - Orphans (replies whose parent we never saw) are dropped and only counted in
   the status line. The plan mentioned a placeholder card; it was not built.
-- No settings UI yet. `localStorage` is unused.
+- The only setting is the home instance. It lives under the `localStorage`
+  key `fedithread.home`.
 - Fork groups summarise the first three authors and "N more". No per-fork
   descendant preview.
 - The only style knobs are the CSS variables at the top of `css/style.css`.
 
-## Next step the owner has in mind
+## Reply hand-off (done)
 
-Grow this into a light threaded reader where "reply" hands off to the user's
-own client. The intended mechanism is Mastodon's remote interaction page:
+Each card footer has a Reply link built by `replyUrl` in `js/settings.js`:
 
 ```
 https://<home instance>/authorize_interaction?uri=<status.uri>
 ```
 
-Suggested shape: a small settings control that stores the home instance in
-`localStorage`, and a Reply link in each card footer next to "Open" that builds
-that URL. `status.uri` is already on every status object; nothing else needs to
-be fetched. Keep it anonymous. OAuth was explicitly out of scope for the first
-pass.
+The home instance comes from the "Reply via your instance" box under the form,
+normalised by `normalizeHost` (accepts a bare host, a URL, or `@user@host`).
+When no home is set, clicking Reply highlights that box instead of navigating.
+Links are rebuilt on every render and whenever the setting changes. Verified
+that mastodon.social accepts that URL for a remote status: logged out it
+redirects to `/auth/sign_in` and continues to the post after login. Other
+Mastodon-API servers may not implement `authorize_interaction`; Pleroma and
+Akkoma use different remote-interaction routes, which is a possible follow-up.
+Reading stays anonymous; OAuth remains out of scope.
+
+## Save as HTML / Markdown (done)
+
+Toolbar buttons "Save as HTML" and "Markdown" plus a "with forks" checkbox.
+`main.js` keeps the last rendered `{ tree, main, result, host }` and hands it
+to `buildExport` in `js/export.js`, then downloads the result through a Blob
+URL. Layout of both documents: title (first line of the root post, or its CW,
+80 chars max), byline, main-line posts as the article with a timestamp
+permalink under each, then a "Replies" section with the forks flattened in
+depth-first order. Each reply carries `depth` and `replyTo`; the HTML nests by
+indenting with a `--depth` variable and links `#s-<id>`, Markdown stays flat
+and links the parent's permalink. Sensitive media becomes a link instead of an
+inline image. Content warnings render as a bold "CW:" line above the body.
+
+`export.js` is pure so it can be tested in node. It cannot use the DOM
+sanitiser, so `statusContentHtml` in `sanitize.js` serialises the sanitised
+fragment to a string and `export.js` re-parses that with its own ~40-line
+tokenizer. The tokenizer only has to handle what the browser serialiser emits
+for our allowlist (double-quoted attributes, `br` and `img` voids, the usual
+entities). It is not a general HTML parser; do not feed it raw server HTML.
+
+Markdown escaping is deliberately moderate: `* [ ] < \` and backticks always,
+`_` only at word boundaries, `~~` when doubled, and `# > - + 1.` only at line
+start. `<` must always be escaped or a post could inject HTML into the
+document. Post headings are shifted down two levels so the document keeps h1
+and h2 for itself.
+
+Verified with the same headless Firefox harness as before (light and dark),
+with a fixture that had a code block, an image, a poll, a CW, custom emoji,
+an ellipsised link and a nested fork. The harness this time served the
+scratchpad on port 8001 with an `app` symlink to the checkout, so the harness
+page could import `app/js/main.js` and the real toolbar markup was spliced in
+from `index.html`.
 
 ## Gotchas hit during the build
 

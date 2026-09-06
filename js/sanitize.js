@@ -79,3 +79,11 @@ export function textWithEmoji(text, emojis) {
   span.textContent = text || '';
   return applyCustomEmoji(span, emojis);
 }
+
+// Sanitised content as an HTML string, for the export module (which is pure
+// and re-parses this with its own small tokenizer).
+export function statusContentHtml(status) {
+  const div = document.createElement('div');
+  div.append(applyCustomEmoji(sanitizeHtml(status.content), status.emojis));
+  return div.innerHTML;
+}

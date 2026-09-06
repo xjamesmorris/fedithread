@@ -59,9 +59,15 @@ button {
 #status { min-height: 1.5em; margin: .5rem 0 0; color: var(--muted); font-size: .9rem; }
 #status.busy::after { content: ""; display: inline-block; width: .8em; height: .8em; margin-left: .4em; border: 2px solid var(--muted); border-right-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; vertical-align: middle; }
 @keyframes spin { to { transform: rotate(360deg); } }
-#toolbar { display: flex; gap: .5rem; margin-top: .5rem; }
+#home-row { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin: .4rem 0 0; font-size: .85rem; color: var(--muted); }
+#home-row input { font: inherit; padding: .25rem .5rem; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--fg); }
+#home-row input.attention { outline: 2px solid var(--start); }
+#toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-top: .5rem; }
 #toolbar[hidden] { display: none; }
 #toolbar button { font-size: .85rem; padding: .3rem .7rem; }
+#toolbar .save { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-left: auto; font-size: .85rem; }
+#toolbar .save label { display: inline-flex; align-items: center; gap: .3rem; color: var(--muted); cursor: pointer; }
+#toolbar .save input { margin: 0; }
 
 .error {
   background: var(--error-bg); color: var(--error-fg);
@@ -119,7 +125,8 @@ img.emoji { height: 1.2em; width: auto; vertical-align: -0.25em; }
 .poll-label { position: relative; }
 
 .card footer { display: flex; gap: 1rem; margin-top: .5rem; font-size: .85rem; color: var(--muted); align-items: center; }
-.card footer .open { margin-left: auto; text-decoration: none; }
+.card footer .actions { margin-left: auto; display: flex; gap: .9rem; }
+.card footer .actions a { text-decoration: none; }
 
 /* Forks */
 details.forks { margin: 0 0 .6rem .5rem; }

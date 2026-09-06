@@ -16,9 +16,20 @@
       <button type="submit">Read</button>
     </form>
     <p id="status" aria-live="polite"></p>
+    <p id="home-row">
+      <label for="home">Reply via your instance:</label>
+      <input id="home" type="text" placeholder="mastodon.example" spellcheck="false" autocomplete="off" size="22">
+      <span id="home-hint" class="muted"></span>
+    </p>
     <div id="toolbar" hidden>
       <button id="expand-all" type="button">Expand all forks</button>
       <button id="collapse-all" type="button">Collapse all forks</button>
+      <span class="save">
+        <span class="muted">Save as</span>
+        <button id="save-html" type="button" title="Download the thread as a standalone web page">HTML</button>
+        <button id="save-md" type="button" title="Download the thread as a Markdown document">Markdown</button>
+        <label title="Include replies from other people as a Replies section"><input id="save-forks" type="checkbox" checked> with forks</label>
+      </span>
     </div>
   </header>
   <main id="thread"></main>

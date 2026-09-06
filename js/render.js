@@ -1,5 +1,6 @@
 import { sanitizeHtml, applyCustomEmoji, textWithEmoji } from './sanitize.js';
 import { countDescendants } from './thread.js';
+import { getHomeInstance, replyUrl } from './settings.js';
 
 const h = (tag, attrs = {}, ...children) => {
   const el = document.createElement(tag);
@@ -107,7 +108,9 @@ function renderCard(status, { host, isStart }) {
     h('span', { title: 'Favourites' }, '★ ', fmtCount(status.favourites_count)),
     status.visibility && status.visibility !== 'public' ? h('span', { class: 'muted' }, status.visibility) : null,
     status.edited_at ? h('span', { class: 'muted', title: status.edited_at }, 'edited') : null,
-    h('a', { class: 'open', href: status.url || status.uri, target: '_blank', rel: 'noopener noreferrer' }, 'Open ↗'),
+    h('span', { class: 'actions' },
+      h('a', { class: 'reply', href: replyUrl(getHomeInstance(), status) || '#', dataset: { uri: status.uri || status.url || '' }, target: '_blank', rel: 'noopener noreferrer', title: 'Reply from your own instance' }, 'Reply'),
+      h('a', { class: 'open', href: status.url || status.uri, target: '_blank', rel: 'noopener noreferrer' }, 'Open ↗')),
   ));
   return card;
 }

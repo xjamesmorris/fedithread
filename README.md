@@ -23,6 +23,24 @@ Accepted link forms include Mastodon (`/@user/ID`, `/@user@remote/ID`,
 `/users/name/statuses/ID`), GoToSocial (`/@user/statuses/ID`), Pleroma and
 Akkoma (`/notice/ID`), Pixelfed (`/p/user/ID`), or just `host ID`.
 
+## Reply from your own account
+
+Type your instance (for example `mastodon.social` or `@you@hachyderm.io`) into
+the "Reply via your instance" box. It is stored only in your browser. Each
+post's **Reply** link then opens your instance's remote-interaction page for that
+post, where you log in and reply with your normal client. Nothing else changes:
+reading stays anonymous.
+
+## Save a thread
+
+Once a thread is loaded, the toolbar offers **Save as HTML** and **Save as
+Markdown**. Both write a clean, self-contained document shaped like a blog
+entry: title, byline, the main line as the article, then a Replies section with
+the forks (untick "with forks" to leave those out). The HTML file has a few
+lines of embedded CSS and no scripts. The Markdown file starts with YAML front
+matter (title, author, date, source), so it drops straight into a static site
+or wiki. Images and custom emoji are linked from the instance, not embedded.
+
 ## Host it
 
 1. Fork or push this repo to GitHub.
@@ -39,7 +57,7 @@ python3 -m http.server 8000
 # then open http://localhost:8000/
 ```
 
-Run the unit tests (URL parsing, tree building, main-line selection):
+Run the unit tests (URL parsing, tree building, main-line selection, export):
 
 ```
 npm test
@@ -54,6 +72,8 @@ npm test
 | `js/thread.js` | collect the thread (working around anonymous API caps), build the tree, pick the main line |
 | `js/sanitize.js` | allowlist HTML sanitizer and custom emoji |
 | `js/render.js` | cards, main line, collapsible forks |
+| `js/settings.js` | home instance setting and the remote-interaction reply URL |
+| `js/export.js` | thread as a standalone HTML page or Markdown document |
 | `js/main.js` | wiring, `?url=` deep links, history |
 
 ## Limitations
@@ -73,5 +93,5 @@ npm test
 
 ## Future
 
-The plan is to grow this into a light threaded reader where "reply" hands off
-to your own client via your home instance's remote-interaction page.
+Possible next steps: a placeholder card for replies whose parent is missing,
+and richer fork previews.
