@@ -80,7 +80,7 @@ Other findings from live testing:
 ## How to verify
 
 ```
-npm test                          # 63 tests, no network
+npm test                          # 64 tests, no network
 python3 -m http.server 8000       # ES modules do not load over file://
 ```
 
@@ -146,6 +146,8 @@ depth-first order. Each reply carries `depth` and `replyTo`; the HTML nests by
 indenting with a `--depth` variable and links `#s-<id>`, Markdown stays flat
 and links the parent's permalink. Sensitive media becomes a link instead of an
 inline image. Content warnings render as a bold "CW:" line above the body.
+The footer names the instance the root post lives on (from its permalink),
+"via" the queried instance when that differs.
 
 `export.js` is pure so it can be tested in node. It cannot use the DOM
 sanitiser, so `statusContentHtml` in `sanitize.js` serialises the sanitised

@@ -235,3 +235,14 @@ test('known custom emoji shortcodes are stripped from titles and names', () => {
   assert.equal(m.title, 'Hello world :unknown:');
   assert.equal(m.author.name, 'A');
 });
+
+test('the footer names the instance the root post lives on, via the queried one when different', () => {
+  const tree = buildTree([st('1', null, 'op', '<p>x</p>', { url: 'https://legal.social/@op/1' })]);
+  const main = classifyNodes(tree, '1', '1');
+  const m = buildExport(tree, main, { rootId: '1', host: 'mastodon.social', content: (s) => s.content });
+  assert.equal(m.host, 'legal.social');
+  assert.equal(m.via, 'mastodon.social');
+  assert.ok(toMarkdown(m).includes('Exported from legal.social via mastodon.social with fedithread. 1 post.'));
+  assert.ok(toHtml(m).includes('<footer>Exported from legal.social via mastodon.social with fedithread. 1 post.</footer>'));
+  assert.equal(model().via, '');
+});

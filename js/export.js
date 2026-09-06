@@ -274,6 +274,8 @@ export function buildExport(tree, main, { rootId, host, includeForks = true, con
   walkMain(root);
 
   const rootPost = posts[0];
+  let origin = host;
+  try { origin = new URL(rootPost.url).host || host; } catch { /* keep the queried host */ }
   const notes = [];
   if (missing) notes.push(`about ${missing} more ${missing === 1 ? 'reply was' : 'replies were'} not reachable anonymously`);
   if (orphans) notes.push(`${orphans} ${orphans === 1 ? 'reply' : 'replies'} could not be placed`);
@@ -283,7 +285,8 @@ export function buildExport(tree, main, { rootId, host, includeForks = true, con
     date: rootPost.date,
     iso: rootPost.iso,
     url: rootPost.url,
-    host,
+    host: origin,
+    via: origin === host ? '' : host,
     posts,
     replies,
     includeForks,
@@ -363,7 +366,7 @@ export function toMarkdown(model) {
   }
 
   const count = model.posts.length + model.replies.length;
-  const foot = [`Exported from ${model.host} with fedithread`, `${count} post${count === 1 ? '' : 's'}`];
+  const foot = [`Exported from ${model.host}${model.via ? ` via ${model.via}` : ''} with fedithread`, `${count} post${count === 1 ? '' : 's'}`];
   if (!model.includeForks) foot.push('replies from others left out');
   out.push('---', '', `*${[...foot, ...model.notes].join('. ')}.*`, '');
   return out.join('\n');
@@ -475,7 +478,7 @@ export function toHtml(model) {
   }
 
   const count = model.posts.length + model.replies.length;
-  const foot = [`Exported from ${escHtml(model.host)} with fedithread`, `${count} post${count === 1 ? '' : 's'}`];
+  const foot = [`Exported from ${escHtml(model.host)}${model.via ? ` via ${escHtml(model.via)}` : ''} with fedithread`, `${count} post${count === 1 ? '' : 's'}`];
   if (!model.includeForks) foot.push('replies from others left out');
   out.push(`<footer>${[...foot, ...model.notes.map(escHtml)].join('. ')}.</footer>`);
   out.push('</article>', '</body>', '</html>', '');
