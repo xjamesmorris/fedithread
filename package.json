@@ -1,0 +1,12 @@
+{
+  "name": "fedithread",
+  "version": "0.1.0",
+  "description": "Read a Mastodon / fediverse thread as one page, with forks collapsed",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "node --test",
+    "serve": "python3 -m http.server 8000"
+  },
+  "license": "MIT"
+}

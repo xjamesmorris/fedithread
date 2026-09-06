@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="referrer" content="no-referrer">
+  <title>fedithread</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="top">
+    <h1><a href="./">fedithread</a></h1>
+    <form id="form" autocomplete="off">
+      <input id="url" type="text" name="url" placeholder="Paste a link to any post in a thread, e.g. https://mastodon.social/@user/1234567890" spellcheck="false" required>
+      <button type="submit">Read</button>
+    </form>
+    <p id="status" aria-live="polite"></p>
+    <div id="toolbar" hidden>
+      <button id="expand-all" type="button">Expand all forks</button>
+      <button id="collapse-all" type="button">Collapse all forks</button>
+    </div>
+  </header>
+  <main id="thread"></main>
+  <footer class="bottom">
+    <p>Reads public threads anonymously via the Mastodon API. The original poster's own replies form the main line; replies from others are collapsed forks. Nothing is stored or sent anywhere but the instance in the link.</p>
+  </footer>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
