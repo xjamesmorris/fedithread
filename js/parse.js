@@ -60,7 +60,7 @@ export function parseStatusUrl(input) {
   return null;
 }
 
-const scheme = (host) => (host.startsWith('localhost') ? 'http' : 'https');
+export const scheme = (host) => (host.startsWith('localhost') ? 'http' : 'https');
 
 export function statusApiUrl(host, id) {
   return `${scheme(host)}://${host}/api/v1/statuses/${encodeURIComponent(id)}`;

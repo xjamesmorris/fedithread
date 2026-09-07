@@ -1,6 +1,6 @@
 # fedithread handoff
 
-Status as of 2026-09-06. Live at https://xjamesmorris.github.io/fedithread/,
+Status as of 2026-09-07. Live at https://xjamesmorris.github.io/fedithread/,
 source at https://github.com/xjamesmorris/fedithread, deployed by GitHub Pages
 from the `main` branch root.
 
@@ -29,7 +29,7 @@ outlined and scrolled into view. `?url=` makes any view shareable.
 
 | File | Role |
 | --- | --- |
-| `index.html` | Shell: form, status line, toolbar (expand/collapse, Save as HTML/Markdown), thread container |
+| `index.html` | Shell: form, status line, toolbar (expand/collapse, Share, Save as HTML/Markdown), share-link row, thread container |
 | `css/style.css` | Layout and theme. Light and dark via `prefers-color-scheme` |
 | `js/parse.js` | `parseStatusUrl(text)` -> `{host, id}` or null. Pure, tested |
 | `js/api.js` | `getJson` with 15 s timeout and friendly error messages, `fetchStatus`, `fetchContext`, `fetchAccountStatuses`, `pLimit` |
@@ -38,8 +38,9 @@ outlined and scrolled into view. `?url=` makes any view shareable.
 | `js/render.js` | Status cards, media, polls, content warnings, lazy fork groups, Reply and Open links |
 | `js/settings.js` | Home instance in `localStorage`, `normalizeHost`, `replyUrl` (pure, tested) |
 | `js/export.js` | `buildExport` (tree -> document model), `toHtml`, `toMarkdown`, `suggestedFileName`, plus a tiny HTML tokenizer and HTML-to-Markdown converter (pure, tested) |
-| `js/main.js` | Wiring, `?url=` deep links, history, progress text, `fedithread:rendered` event |
-| `test/*.test.js` | Parser cases, tree and main-line cases, collector against a mocked capped server, export documents |
+| `js/share.js` | `statusRef` and `shareUrl`: the Share link, built from `{host, id, acct}` and checked against the parser (pure, tested) |
+| `js/main.js` | Wiring, `?url=` deep links, history, progress text, Share button and clipboard, `fedithread:rendered` event |
+| `test/*.test.js` | Parser cases, tree and main-line cases, collector against a mocked capped server, export documents, share-link round trips |
 
 Everything network-related lives in `collectThread`. Everything pure is
 exported separately so it can be tested without a browser or network.
@@ -80,7 +81,7 @@ Other findings from live testing:
 ## How to verify
 
 ```
-npm test                          # 66 tests, no network
+npm test                          # 80 tests, no network
 python3 -m http.server 8000       # ES modules do not load over file://
 ```
 
@@ -199,6 +200,75 @@ save dialog itself, since there is no WebDriver on the build machine.
 - Titles are cut at 80 characters mid-phrase with an ellipsis.
 - The `Blob` download is a plain anchor click; Safari on iOS may open the
   file instead of saving it. Untested.
+
+## Share link (done 2026-09-07)
+
+The toolbar's Share button copies a link that reopens the thread with the
+same post highlighted, and shows it in the `#share-row` box under the
+toolbar. The requirement was a link with no user-specific information or
+state, so `shareUrl` in `js/share.js` builds the `?url=` value from the
+parsed `{host, id}` the app actually queried plus `result.start.account.acct`:
+
+```
+<page origin + path>?url=https://<host>/@<acct>/<id>
+```
+
+What it deliberately does not use:
+
+- The raw pasted text. That can carry a tracking query, a `/deck/` or
+  `/i/web/` path that says which client the sharer uses, or userinfo.
+- `status.url`. For a remote post read through another instance that names
+  a different host and a different id (`mastodon.social/@x@legal.social/117069642737661732`
+  has `url` `legal.social/@x/117069642548297046`), and the origin host may
+  refuse anonymous access. The queried host must stay in the link; it is the
+  only place the id means anything. That host is often the sharer's own
+  instance, which is why the button title says "the instance you read it
+  through" rather than promising nothing about you.
+- The home instance (`localStorage`), fork and CW state, the "with forks"
+  box, the page's own query and hash. None of them reach the link.
+
+`statusRef` checks each candidate with `parseStatusUrl` and falls back to the
+bare `host/id` form when the handle is missing or unusable, so a link the app
+emits is always one it can read. `https://host/id` without a handle does not
+parse (the fallback needs two path segments), which is why the bare form is
+scheme-less. If neither form re-parses (a non-numeric id under six
+characters, seen on no real server) the hint says the link could not be
+built. The value is percent-encoded with `:`, `/` and `@` restored so the
+link reads as a link; `URLSearchParams` decodes both spellings the same way.
+
+The click handler calls `navigator.clipboard.writeText` synchronously
+(Safari needs the user activation) and updates the hint from the promise:
+"Copied" on success, or focus and select the box with "Select and copy
+this link" when the clipboard is denied or absent (LAN IP over plain http).
+Focus stays on the button on success so screen readers hear the hint, not
+the whole URL. `load()` now hides the toolbar and share row and clears
+`current` before parsing, so pasting junk no longer leaves the previous
+thread's Share and Save buttons live.
+
+The takeover review found and fixed one lifecycle race in that reset:
+`resetLoadedState()` now aborts the active request before a new value is
+parsed. Invalid input can therefore no longer clear the page and then be
+overwritten when an older request finishes. Navigating back to the empty page
+does the same abort and clears the thread, Share value, toolbar state and page
+title. Progress and clipboard promises are also tied to the active attempt, so
+late completions cannot restore cleared messages or overwrite newer state.
+
+Verified in the replay harness (malteengeler thread pasted as a `/deck/`
+link with `?utm_source` and a fragment, home instance set to hachyderm.io):
+the copied text was
+`http://127.0.0.1:8001/harness-malte.html?url=https://mastodon.social/@malteengeler@legal.social/117069642737661732`,
+and the denied and missing clipboard paths showed the fallback hint with
+the box focused and selected. Dark scheme and a 420 px viewport checked.
+The takeover used a deterministic headless-Firefox harness against the real
+`main.js`; it also verified successful and denied clipboard paths, invalid
+input and empty-history navigation during delayed fetches, full UI reset, and
+reopening the generated link with the same status highlighted.
+
+Known gap: the address bar still shows the raw paste percent-encoded
+(tracking query included) because `load()` pushes `text.trim()`; the Share
+button is the clean form. Making the pushed URL canonical would need the
+handle, which is unknown until the fetch completes, or the bare form, which
+would replace the user's text in the input on popstate.
 
 ## Visual checks without a browser driver
 
