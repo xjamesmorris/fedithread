@@ -40,6 +40,8 @@ the forks (untick "with forks" to leave those out). The HTML file has a few
 lines of embedded CSS and no scripts. The Markdown file starts with YAML front
 matter (title, author, date, source), so it drops straight into a static site
 or wiki. Images and custom emoji are linked from the instance, not embedded.
+A small **Powered by fedithread** link at the bottom points back to this source
+repository.
 
 ## Share a thread
 
