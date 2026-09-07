@@ -157,7 +157,8 @@ matter (title, author, date, source). The HTML has embedded CSS with a dark
 scheme and no scripts. Images and emoji are linked from the instance, never
 embedded. The footer names the instance the root post lives on (from its
 permalink), "via" the queried instance when that differs, because the
-"not reachable anonymously" count depends on which server answered.
+"not reachable anonymously" count depends on which server answered. A small
+"Powered by fedithread" link at the very bottom points to the source repository.
 
 `export.js` is pure so it can be tested in node. It cannot use the DOM
 sanitiser, so `statusContentHtml` in `sanitize.js` serialises the sanitised

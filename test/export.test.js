@@ -189,7 +189,9 @@ Reply to bob.
 
 ---
 
-*Exported from h.example with fedithread. 5 posts. about 2 more replies were not reachable anonymously.*
+*Exported from h.example. 5 posts. about 2 more replies were not reachable anonymously.*
+
+<sub>[Powered by fedithread](https://github.com/xjamesmorris/fedithread)</sub>
 `);
 });
 
@@ -213,7 +215,7 @@ test('toHtml is a standalone page with anchors, nesting and no scripts', () => {
   assert.ok(html.includes('<div class="reply" id="s-7" style="--depth:1">'));
   assert.ok(html.includes('replying to <a href="#s-4">BOB</a>'));
   assert.ok(html.includes('<p class="cw">CW: spoilers</p>'));
-  assert.ok(html.includes('<footer>Exported from h.example with fedithread. 5 posts. about 2 more replies were not reachable anonymously.</footer>'));
+  assert.ok(html.includes('<footer>Exported from h.example. 5 posts. about 2 more replies were not reachable anonymously.<small class="powered"><a href="https://github.com/xjamesmorris/fedithread">Powered by fedithread</a></small></footer>'));
   // Main-line posts by the root author carry no author line; others do.
   assert.ok(!html.includes('<a class="who" href="https://h.example/@op">'));
   assert.ok(html.includes('<a class="who" href="https://h.example/@bob">BOB</a> @bob@h.example'));
@@ -242,8 +244,9 @@ test('the footer names the instance the root post lives on, via the queried one 
   const m = buildExport(tree, main, { rootId: '1', host: 'mastodon.social', content: (s) => s.content });
   assert.equal(m.host, 'legal.social');
   assert.equal(m.via, 'mastodon.social');
-  assert.ok(toMarkdown(m).includes('Exported from legal.social via mastodon.social with fedithread. 1 post.'));
-  assert.ok(toHtml(m).includes('<footer>Exported from legal.social via mastodon.social with fedithread. 1 post.</footer>'));
+  assert.ok(toMarkdown(m).includes('Exported from legal.social via mastodon.social. 1 post.'));
+  assert.ok(toMarkdown(m).includes('[Powered by fedithread](https://github.com/xjamesmorris/fedithread)'));
+  assert.ok(toHtml(m).includes('Exported from legal.social via mastodon.social. 1 post.<small class="powered"><a href="https://github.com/xjamesmorris/fedithread">Powered by fedithread</a></small>'));
   assert.equal(model().via, '');
 });
 

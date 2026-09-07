@@ -7,6 +7,8 @@
 
 import { orphanGroups, findAccount } from './thread.js';
 
+const PROJECT_URL = 'https://github.com/xjamesmorris/fedithread';
+
 // ---------------------------------------------------------------- HTML parsing
 
 const VOID = new Set(['br', 'img', 'hr']);
@@ -387,9 +389,9 @@ export function toMarkdown(model) {
   }
 
   const count = model.posts.length + model.replies.length;
-  const foot = [`Exported from ${model.host}${model.via ? ` via ${model.via}` : ''} with fedithread`, `${count} post${count === 1 ? '' : 's'}`];
+  const foot = [`Exported from ${model.host}${model.via ? ` via ${model.via}` : ''}`, `${count} post${count === 1 ? '' : 's'}`];
   if (!model.includeForks) foot.push('replies from others left out');
-  out.push('---', '', `*${[...foot, ...model.notes].join('. ')}.*`, '');
+  out.push('---', '', `*${[...foot, ...model.notes].join('. ')}.*`, '', `<sub>[Powered by fedithread](${PROJECT_URL})</sub>`, '');
   return out.join('\n');
 }
 
@@ -427,6 +429,8 @@ blockquote { margin: .8em 0; padding-left: .8em; border-left: 3px solid var(--li
 .reply > .meta { margin: 0 0 .5rem; }
 .reply .who { font-weight: 600; color: var(--fg); }
 footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--line); }
+footer .powered { display: block; margin-top: .35rem; font-size: .85em; }
+footer .powered a { color: inherit; }
 `.trim();
 
 function htmlMedia(m) {
@@ -500,9 +504,9 @@ export function toHtml(model) {
   }
 
   const count = model.posts.length + model.replies.length;
-  const foot = [`Exported from ${escHtml(model.host)}${model.via ? ` via ${escHtml(model.via)}` : ''} with fedithread`, `${count} post${count === 1 ? '' : 's'}`];
+  const foot = [`Exported from ${escHtml(model.host)}${model.via ? ` via ${escHtml(model.via)}` : ''}`, `${count} post${count === 1 ? '' : 's'}`];
   if (!model.includeForks) foot.push('replies from others left out');
-  out.push(`<footer>${[...foot, ...model.notes.map(escHtml)].join('. ')}.</footer>`);
+  out.push(`<footer>${[...foot, ...model.notes.map(escHtml)].join('. ')}.<small class="powered"><a href="${PROJECT_URL}">Powered by fedithread</a></small></footer>`);
   out.push('</article>', '</body>', '</html>', '');
   return out.join('\n');
 }
