@@ -24,6 +24,7 @@
     <div id="toolbar" hidden>
       <button id="expand-all" type="button">Expand all forks</button>
       <button id="collapse-all" type="button">Collapse all forks</button>
+      <button id="share" type="button" title="Copy a link that reopens this thread. It contains only the post address: the instance you read it through and the post id.">Share</button>
       <span class="save">
         <span class="muted">Save as</span>
         <button id="save-html" type="button" title="Download the thread as a standalone web page">HTML</button>
@@ -31,6 +32,11 @@
         <label title="Include replies from other people as a Replies section"><input id="save-forks" type="checkbox" checked> with forks</label>
       </span>
     </div>
+    <p id="share-row" hidden>
+      <label for="share-link">Share link:</label>
+      <input id="share-link" type="text" readonly spellcheck="false" autocomplete="off">
+      <span id="share-hint" class="muted" aria-live="polite"></span>
+    </p>
   </header>
   <main id="thread"></main>
   <footer class="bottom">

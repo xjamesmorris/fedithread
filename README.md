@@ -41,6 +41,16 @@ lines of embedded CSS and no scripts. The Markdown file starts with YAML front
 matter (title, author, date, source), so it drops straight into a static site
 or wiki. Images and custom emoji are linked from the instance, not embedded.
 
+## Share a thread
+
+**Share** in the toolbar copies a link that reopens the thread you are looking
+at, with the same post highlighted. The link is this page plus `?url=` and the
+post's address, built from the instance you read the thread through, the
+author's handle and the post id. Your reply instance, which forks you opened
+and anything else about you are not in it. If the browser refuses the
+clipboard, the link is shown in a box so you can copy it yourself. Starting
+another read clears the previous Share link.
+
 ## Host it
 
 1. Fork or push this repo to GitHub.
@@ -57,7 +67,7 @@ python3 -m http.server 8000
 # then open http://localhost:8000/
 ```
 
-Run the unit tests (URL parsing, tree building, main-line selection, export):
+Run the unit tests (URL parsing, tree building, main-line selection, export, share link):
 
 ```
 npm test
@@ -73,6 +83,7 @@ npm test
 | `js/sanitize.js` | allowlist HTML sanitizer and custom emoji |
 | `js/render.js` | cards, main line, collapsible forks |
 | `js/settings.js` | home instance setting and the remote-interaction reply URL |
+| `js/share.js` | the Share link: this page with `?url=` pointing at the post |
 | `js/export.js` | thread as a standalone HTML page or Markdown document |
 | `js/main.js` | wiring, `?url=` deep links, history |
 

@@ -4,6 +4,7 @@ import { renderThread, renderError } from './render.js';
 import { getHomeInstance, setHomeInstance, replyUrl } from './settings.js';
 import { statusContentHtml } from './sanitize.js';
 import { buildExport, toHtml, toMarkdown, suggestedFileName } from './export.js';
+import { shareUrl } from './share.js';
 
 const $ = (sel) => document.querySelector(sel);
 const form = $('#form');
@@ -18,14 +19,32 @@ const homeHint = $('#home-hint');
 const saveHtmlBtn = $('#save-html');
 const saveMdBtn = $('#save-md');
 const saveForks = $('#save-forks');
+const shareBtn = $('#share');
+const shareRow = $('#share-row');
+const shareLink = $('#share-link');
+const shareHint = $('#share-hint');
 
 let inflight = null;
 let currentForks = [];
-let current = null; // { tree, main, result, host } of the rendered thread, for export
+let current = null; // { tree, main, result, host, id } of the rendered thread, for export and share
+let shareAttempt = 0;
 
 function setStatus(text, { busy = false } = {}) {
   statusLine.textContent = text;
   statusLine.classList.toggle('busy', busy);
+}
+
+function resetLoadedState() {
+  inflight?.abort();
+  inflight = null;
+  shareAttempt++;
+  currentForks = [];
+  current = null;
+  toolbar.hidden = true;
+  shareRow.hidden = true;
+  shareLink.value = '';
+  shareHint.textContent = '';
+  document.title = 'fedithread';
 }
 
 function openAll(forks, open) {
@@ -40,6 +59,8 @@ function openAll(forks, open) {
 }
 
 async function load(text, { push = true } = {}) {
+  // Whatever happens next, the previous thread's tools must not outlive it.
+  resetLoadedState();
   const target = parseStatusUrl(text);
   if (!target) {
     setStatus('');
@@ -53,19 +74,18 @@ async function load(text, { push = true } = {}) {
   }
   document.title = `${target.host} thread · fedithread`;
 
-  inflight?.abort();
   const ctrl = new AbortController();
   inflight = ctrl;
   threadEl.replaceChildren();
-  toolbar.hidden = true;
-  current = null;
   setStatus(`Fetching from ${target.host}…`, { busy: true });
 
   try {
     const result = await collectThread(target.host, target.id, {
       signal: ctrl.signal,
-      onProgress: ({ posts, requests, pending }) =>
-        setStatus(`Fetched ${posts} post${posts === 1 ? '' : 's'} in ${requests} request${requests === 1 ? '' : 's'}${pending ? `, ${pending} pending` : ''}…`, { busy: true }),
+      onProgress: ({ posts, requests, pending }) => {
+        if (inflight !== ctrl || ctrl.signal.aborted) return;
+        setStatus(`Fetched ${posts} post${posts === 1 ? '' : 's'} in ${requests} request${requests === 1 ? '' : 's'}${pending ? `, ${pending} pending` : ''}…`, { busy: true });
+      },
     });
     if (ctrl.signal.aborted) return;
 
@@ -73,7 +93,7 @@ async function load(text, { push = true } = {}) {
     const main = classifyNodes(tree, result.root.id, result.start.id);
     const { element, forks } = renderThread(tree, main, { host: target.host, rootId: result.root.id, startId: result.start.id });
     currentForks = forks;
-    current = { tree, main, result, host: target.host };
+    current = { tree, main, result, host: target.host, id: target.id };
     threadEl.replaceChildren(element);
     refreshReplyLinks();
     toolbar.hidden = false;
@@ -150,6 +170,34 @@ function saveThread(format) {
 saveHtmlBtn.addEventListener('click', () => saveThread('html'));
 saveMdBtn.addEventListener('click', () => saveThread('md'));
 
+// Share: copy a link that reopens this thread, built only from the parsed
+// host and id and the author's handle. The home instance, fork state and
+// anything else about the reader stay out of it. The clipboard call must
+// happen synchronously in the click handler, or Safari drops it.
+function share() {
+  if (!current) return;
+  const attempt = ++shareAttempt;
+  const url = shareUrl(location.href, { host: current.host, id: current.id, acct: current.result.start.account?.acct });
+  shareLink.value = url || '';
+  shareHint.textContent = '';
+  shareRow.hidden = false;
+  if (!url) { shareHint.textContent = 'Could not build a link for this post.'; return; }
+  let copied;
+  try { copied = navigator.clipboard.writeText(url); } catch (err) { copied = Promise.reject(err); }
+  copied.then(
+    () => {
+      if (attempt === shareAttempt) shareHint.textContent = 'Copied. The link holds only the post address.';
+    },
+    () => {
+      if (attempt !== shareAttempt) return;
+      shareLink.focus();
+      shareLink.select();
+      shareHint.textContent = 'Select and copy this link.';
+    },
+  );
+}
+shareBtn.addEventListener('click', share);
+
 form.addEventListener('submit', (e) => {
   e.preventDefault();
   load(input.value);
@@ -161,7 +209,11 @@ window.addEventListener('popstate', () => {
   const url = new URL(location.href).searchParams.get('url') || '';
   input.value = url;
   if (url) load(url, { push: false });
-  else { threadEl.replaceChildren(); toolbar.hidden = true; current = null; setStatus(''); }
+  else {
+    resetLoadedState();
+    threadEl.replaceChildren();
+    setStatus('');
+  }
 });
 
 const initial = new URL(location.href).searchParams.get('url');
