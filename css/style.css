@@ -62,6 +62,7 @@ button {
 #home-row, #share-row { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin: .4rem 0 0; font-size: .85rem; color: var(--muted); }
 #home-row input, #share-row input { font: inherit; padding: .25rem .5rem; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--fg); }
 #home-row input.attention { outline: 2px solid var(--start); }
+#home-row .optional { font-style: italic; }
 #share-row { margin-top: .5rem; }
 #share-row[hidden] { display: none; }
 #share-link { flex: 1 1 24rem; min-width: 0; font-size: 1rem; }

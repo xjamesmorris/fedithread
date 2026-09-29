@@ -124,7 +124,9 @@ function refreshReplyLinks() {
   for (const a of threadEl.querySelectorAll('a.reply')) {
     a.href = replyUrl(home, { uri: a.dataset.uri }) || '#';
   }
-  homeHint.textContent = home ? '' : 'Set this to make Reply open a post in your own account.';
+  homeHint.textContent = home
+    ? `Reply links open posts on ${home}.`
+    : 'Not required to read threads. Enter it to get Reply links that open each post in your own account.';
 }
 homeInput.value = getHomeInstance();
 homeInput.addEventListener('change', () => {
