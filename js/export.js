@@ -137,16 +137,16 @@ function mdNode(n, ctx) {
     }
     case 'h1': case 'h2': case 'h3': case 'h4': case 'h5': case 'h6': {
       // The document owns h1 and h2, so post headings start at h3.
-      const level = Math.min(6, Number(n.tag[1]) + 2);
+      const level = Math.min(6, Number(n.tag[1]) + (ctx.headingOffset ?? 2));
       return `\n\n${'#'.repeat(level)} ${inner().trim()}\n\n`;
     }
-    case 'img': return isEmoji(n) ? (n.attrs.alt || '') : `![${escapeMd(n.attrs.alt || '')}](${mdUrl(n.attrs.src)})`;
+    case 'img': return isEmoji(n) && !ctx.emojiImages ? (n.attrs.alt || '') : `![${escapeMd(n.attrs.alt || '')}](${mdUrl(n.attrs.src)})`;
     default: return inner();
   }
 }
 
-export function htmlToMarkdown(html) {
-  return mdNodes(parseHtml(html)).replace(/\n{3,}/g, '\n\n').trim();
+export function htmlToMarkdown(html, options = {}) {
+  return mdNodes(parseHtml(html), options).replace(/\n{3,}/g, '\n\n').trim();
 }
 
 // ------------------------------------------------------------ HTML -> clean HTML
@@ -223,6 +223,7 @@ function postOf(status, host, content) {
   return {
     id: status.id,
     url: status.url || status.uri || '',
+    uri: status.uri || '',
     date: fmtDate(status.created_at),
     iso: status.created_at,
     author: { name: stripShortcodes(acct.display_name, acct.emojis) || acct.username || '', handle: handleOf(acct, host), url: acct.url || '' },
@@ -324,10 +325,10 @@ export function suggestedFileName(model, ext) {
 // -------------------------------------------------------------------- Markdown
 
 function mdMedia(m) {
-  if (!m.url) return '';
+  if (!m.url) return m.unavailable ? `*${escapeMd(m.unavailable)}*` : '';
   const label = m.alt || m.type;
-  if (m.type === 'image' && !m.sensitive) return `![${escapeMd(m.alt)}](${mdUrl(m.url)})`;
-  const kind = m.sensitive ? `Sensitive ${m.type}` : m.type[0].toUpperCase() + m.type.slice(1);
+  if (m.type === 'image' && !m.sensitive && !m.linked) return `![${escapeMd(m.alt)}](${mdUrl(m.url)})`;
+  const kind = m.linked ? `${m.sensitive ? 'Sensitive image' : 'Image'} not bundled` : m.sensitive ? `Sensitive ${m.type}` : m.type[0].toUpperCase() + m.type.slice(1);
   return `[${kind}${m.alt ? `: ${escapeMd(label)}` : ''}](${mdUrl(m.url)})`;
 }
 
@@ -338,10 +339,10 @@ function mdPoll(poll) {
   return lines.join('\n');
 }
 
-function mdPostBody(p) {
+function mdPostBody(p, options) {
   const parts = [];
   if (p.cw) parts.push(`**CW: ${escapeMd(p.cw)}**`);
-  const body = htmlToMarkdown(p.html);
+  const body = htmlToMarkdown(p.html, options);
   if (body) parts.push(body);
   const media = p.media.map(mdMedia).filter(Boolean);
   if (media.length) parts.push(media.join('\n\n'));
@@ -362,29 +363,34 @@ function mdMeta(p, { showAuthor, replyTo }) {
   return `<sub>${bits.join(' · ')}</sub>`;
 }
 
-export function toMarkdown(model) {
+export function toMarkdown(model, { frontMatter = true, headingLevel = 1, emojiImages = false, navigation = '' } = {}) {
   const out = [];
-  out.push('---');
-  out.push(`title: ${JSON.stringify(model.title)}`);
-  out.push(`author: ${JSON.stringify(`${model.author.name} (${model.author.handle})`)}`);
-  if (model.iso) out.push(`date: ${model.iso}`);
-  if (model.url) out.push(`source: ${model.url}`);
-  out.push('---', '');
-  out.push(`# ${escapeMd(model.title)}`, '');
+  if (frontMatter) {
+    out.push('---');
+    out.push(`title: ${JSON.stringify(model.title)}`);
+    out.push(`author: ${JSON.stringify(`${model.author.name} (${model.author.handle})`)}`);
+    if (model.iso) out.push(`date: ${model.iso}`);
+    if (model.url) out.push(`source: ${model.url}`);
+    out.push('---', '');
+  }
+  if (navigation) out.push(navigation, '');
+  out.push(`${'#'.repeat(headingLevel)} ${escapeMd(model.title)}`, '');
   const by = model.author.url ? `[${escapeMd(model.author.name || model.author.handle)}](${mdUrl(model.author.url)})` : escapeMd(model.author.name);
   const src = model.url ? ` · [Original thread](${mdUrl(model.url)})` : '';
   out.push(`By ${by} ${escapeMd(model.author.handle)} · ${model.date}${src}`, '');
 
   for (const p of model.posts) {
-    out.push(mdPostBody(p), '');
+    if (emojiImages) out.push(`<a id="s-${escHtml(p.id)}"></a>`, '');
+    out.push(mdPostBody(p, { emojiImages, headingOffset: headingLevel + 1 }), '');
     out.push(mdMeta(p, { showAuthor: p.author.handle !== model.author.handle }), '');
   }
 
   if (model.replies.length) {
-    out.push('## Replies', '');
+    out.push(`${'#'.repeat(headingLevel + 1)} Replies`, '');
     for (const r of model.replies) {
+      if (emojiImages) out.push(`<a id="s-${escHtml(r.id)}"></a>`, '');
       out.push(mdMeta(r, { showAuthor: true, replyTo: r.replyTo }), '');
-      out.push(mdPostBody(r), '');
+      out.push(mdPostBody(r, { emojiImages, headingOffset: headingLevel + 1 }), '');
     }
   }
 
@@ -434,9 +440,9 @@ footer .powered a { color: inherit; }
 `.trim();
 
 function htmlMedia(m) {
-  if (!m.url) return '';
-  if (m.type === 'image' && !m.sensitive) return `<a href="${escHtml(m.url)}"><img src="${escHtml(m.url)}" alt="${escHtml(m.alt)}" loading="lazy"></a>`;
-  const kind = m.sensitive ? `Sensitive ${m.type}` : m.type[0].toUpperCase() + m.type.slice(1);
+  if (!m.url) return m.unavailable ? `<p>${escHtml(m.unavailable)}</p>` : '';
+  if (m.type === 'image' && !m.sensitive && !m.linked) return `<a href="${escHtml(m.url)}"><img src="${escHtml(m.url)}" alt="${escHtml(m.alt)}" loading="lazy"></a>`;
+  const kind = m.linked ? `${m.sensitive ? 'Sensitive image' : 'Image'} not bundled` : m.sensitive ? `Sensitive ${m.type}` : m.type[0].toUpperCase() + m.type.slice(1);
   return `<p><a href="${escHtml(m.url)}">${escHtml(kind)}${m.alt ? `: ${escHtml(m.alt)}` : ''}</a></p>`;
 }
 
@@ -474,13 +480,16 @@ function htmlMeta(p, { showAuthor, replyTo }) {
   return `<p class="meta">${bits.join(' · ')}</p>`;
 }
 
-export function toHtml(model) {
+export function toHtml(model, { fragment = false, headingLevel = 1, styleHref = '', navigation = '', collapseReplies = false } = {}) {
   const out = [];
-  out.push('<!doctype html>', '<html lang="en">', '<head>', '<meta charset="utf-8">', '<meta name="viewport" content="width=device-width, initial-scale=1">');
-  out.push(`<title>${escHtml(model.title)}</title>`);
-  if (model.url) out.push(`<link rel="canonical" href="${escHtml(model.url)}">`);
-  out.push(`<style>${CSS}</style>`, '</head>', '<body>', '<article>');
-  out.push('<header>', `<h1>${escHtml(model.title)}</h1>`);
+  if (!fragment) {
+    out.push('<!doctype html>', '<html lang="en">', '<head>', '<meta charset="utf-8">', '<meta name="viewport" content="width=device-width, initial-scale=1">');
+    out.push(`<title>${escHtml(model.title)}</title>`);
+    if (model.url) out.push(`<link rel="canonical" href="${escHtml(model.url)}">`);
+    out.push(styleHref ? `<link rel="stylesheet" href="${escHtml(styleHref)}">` : `<style>${CSS}</style>`, '</head>', '<body>', '<article>');
+  }
+  if (navigation) out.push(navigation);
+  out.push('<header>', `<h${headingLevel}>${escHtml(model.title)}</h${headingLevel}>`);
   const by = model.author.url ? `<a href="${escHtml(model.author.url)}">${escHtml(model.author.name || model.author.handle)}</a>` : escHtml(model.author.name);
   const src = model.url ? ` · <a href="${escHtml(model.url)}">Original thread</a>` : '';
   out.push(`<p class="byline">By ${by} ${escHtml(model.author.handle)} · <time datetime="${escHtml(model.iso || '')}">${escHtml(model.date)}</time>${src}</p>`, '</header>');
@@ -493,20 +502,156 @@ export function toHtml(model) {
   }
 
   if (model.replies.length) {
-    out.push('<section class="replies">', '<h2>Replies</h2>');
+    out.push(collapseReplies ? '<details class="replies"><summary>Discussion</summary>' : '<section class="replies">');
+    if (!collapseReplies) out.push(`<h${headingLevel + 1}>Replies</h${headingLevel + 1}>`);
     for (const r of model.replies) {
       out.push(`<div class="reply" id="s-${escHtml(r.id)}" style="--depth:${Math.min(r.depth, 6)}">`);
       out.push(htmlMeta(r, { showAuthor: true, replyTo: r.replyTo }));
       out.push(htmlPostBody(r));
       out.push('</div>');
     }
-    out.push('</section>');
+    out.push(collapseReplies ? '</details>' : '</section>');
   }
 
   const count = model.posts.length + model.replies.length;
   const foot = [`Exported from ${escHtml(model.host)}${model.via ? ` via ${escHtml(model.via)}` : ''}`, `${count} post${count === 1 ? '' : 's'}`];
   if (!model.includeForks) foot.push('replies from others left out');
   out.push(`<footer>${[...foot, ...model.notes.map(escHtml)].join('. ')}.<small class="powered"><a href="${PROJECT_URL}">Powered by fedithread</a></small></footer>`);
-  out.push('</article>', '</body>', '</html>', '');
+  if (!fragment) out.push('</article>', '</body>', '</html>', '');
   return out.join('\n');
+}
+
+export function archiveId(id) {
+  return /^[a-z0-9_-]+$/i.test(id) ? id : `~${[...new TextEncoder().encode(id)].map((b) => b.toString(16).padStart(2, '0')).join('')}`;
+}
+
+export function safeHttpUrl(value) {
+  try {
+    const url = new URL(value);
+    if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) return '';
+    return url.href;
+  } catch {
+    return '';
+  }
+}
+
+export function buildSeriesExport(snapshot, { content }) {
+  const articles = snapshot.articles.map((article) => {
+    const model = buildExport(article.tree, article.main, {
+      rootId: article.id, host: snapshot.target.host, content,
+      includeForks: snapshot.includeDiscussion, missing: article.missing,
+    });
+    for (const p of [...model.posts, ...model.replies]) {
+      p.url = safeHttpUrl(p.url);
+      p.uri = safeHttpUrl(p.uri);
+      p.author.url = safeHttpUrl(p.author.url);
+      if (p.replyTo) p.replyTo.url = safeHttpUrl(p.replyTo.url);
+      for (const m of p.media) {
+        m.url = safeHttpUrl(m.url);
+        if (!m.url) m.unavailable = `This ${m.type} has no usable source URL and was not bundled.`;
+      }
+    }
+    model.author.url = safeHttpUrl(model.author.url);
+    model.url = safeHttpUrl(model.url);
+    return { ...model, id: article.id, file: archiveId(article.id), notes: [...new Set([...model.notes, ...article.notes])] };
+  });
+  return {
+    title: snapshot.title, source: snapshot.source, author: snapshot.account?.acct || snapshot.target.acct,
+    tag: snapshot.target.tag, fetchedAt: snapshot.fetchedAt, includeDiscussion: snapshot.includeDiscussion,
+    warnings: snapshot.warnings, complete: snapshot.complete, articles,
+  };
+}
+
+function mapDocument(model, article, assets, { format, combined = false }) {
+  const base = combined ? '' : '../';
+  const prefix = combined ? `${article.file}-` : '';
+  const links = new Map();
+  for (const kind of ['posts', 'replies']) for (const entry of model.articles) {
+    for (const p of entry[kind]) {
+      const fragment = `#s-${combined ? `${entry.file}-` : ''}${archiveId(p.id)}`;
+      for (const url of [p.url, p.uri]) {
+        if (url && !links.has(url)) links.set(url, combined ? fragment : `${base}posts/${entry.file}.${format}${fragment}`);
+      }
+    }
+  }
+  const rewrite = (html) => {
+    const visit = (nodes) => nodes.map((n) => {
+      if (n.text != null) return n;
+      const copy = { ...n, attrs: { ...n.attrs }, children: visit(n.children) };
+      if (copy.tag === 'a' && links.has(copy.attrs.href)) copy.attrs.href = links.get(copy.attrs.href);
+      if (copy.tag === 'img') {
+        const asset = assets.get(copy.attrs.src);
+        if (asset) copy.attrs.src = base + asset.path;
+        else return { tag: 'a', attrs: { href: safeHttpUrl(copy.attrs.src) }, children: [{ text: `[Image not bundled: ${copy.attrs.alt || 'image'}]` }] };
+      }
+      if (format === 'html' && /^h[1-6]$/.test(copy.tag)) copy.tag = `h${Math.min(6, Number(copy.tag[1]) + (combined ? 3 : 2))}`;
+      return copy;
+    });
+    return htmlNodes(visit(parseHtml(html)));
+  };
+  const post = (p) => ({
+    ...p, id: prefix + archiveId(p.id), html: rewrite(p.html),
+    replyTo: p.replyTo ? { ...p.replyTo, id: prefix + archiveId(p.replyTo.id) } : undefined,
+    media: p.media.map((m) => {
+      if (m.type !== 'image') return m;
+      const asset = assets.get(m.url);
+      return asset ? { ...m, url: base + asset.path } : { ...m, linked: true };
+    }),
+  });
+  return { ...article, posts: article.posts.map(post), replies: article.replies.map(post) };
+}
+
+export function seriesDocuments(model, { format, assets = new Map(), omissions = [], exportedAt = new Date().toISOString() }) {
+  if (!['html', 'md'].includes(format)) throw new Error('Unsupported archive format.');
+  const files = new Map();
+  const warnings = [...new Set([...model.warnings, ...omissions.map((o) => `${o.url}: ${o.reason}`)])];
+  const partial = !model.complete || warnings.length > 0;
+  const label = partial ? 'Partial archive' : 'Collection snapshot';
+  const noticeMd = `> **${label}.** Public API-visible posts only.${warnings.length ? '\n>\n' + warnings.map((w) => `> - ${escapeMd(w.replace(/\r?\n/g, ' '))}`).join('\n') : ''}`;
+  const noticeHtml = `<aside><p><strong>${label}.</strong> Public API-visible posts only.</p>${warnings.length ? `<ul>${warnings.map((w) => `<li>${escHtml(w)}</li>`).join('')}</ul>` : ''}</aside>`;
+  const indexName = format === 'html' ? 'index.html' : 'README.md';
+  const allName = `all.${format}`;
+  const listHtml = `<ol>${model.articles.map((a) => `<li><a href="posts/${a.file}.html">${escHtml(a.title)}</a></li>`).join('')}</ol>`;
+  const listMd = model.articles.map((a) => `- [${escapeMd(a.title)}](posts/${a.file}.md)`).join('\n');
+  const htmlPage = (body) => `<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><title>${escHtml(model.title)}</title><link rel="stylesheet" href="assets/style.css"></head><body><article>${body}</article></body></html>\n`;
+  const headerHtml = `<h1>${escHtml(model.title)}</h1><p><a href="${escHtml(model.source)}">Original tagged collection</a> · ${model.articles.length} articles · oldest first</p>${noticeHtml}`;
+  const headerMd = `# ${escapeMd(model.title)}\n\n[Original tagged collection](${mdUrl(model.source)}) · ${model.articles.length} articles · oldest first\n\n${noticeMd}\n\n`;
+  if (format === 'html') {
+    files.set('assets/style.css', `${CSS}\nnav, aside { margin: 1rem 0; } aside { padding: .8rem; background: var(--soft); } summary { cursor: pointer; } .entry { margin-top: 3rem; }`);
+    files.set(indexName, htmlPage(`${headerHtml}<p><a href="${allName}">Read all</a></p>${listHtml}`));
+  } else files.set(indexName, `${headerMd}[Read all](${allName})\n\n${listMd}\n`);
+  const combined = [];
+  for (let i = 0; i < model.articles.length; i++) {
+    const article = model.articles[i];
+    const neighbors = [
+      ['Index', `../${indexName}`], ['Read all', `../${allName}`],
+      ...(i ? [['Previous', `${model.articles[i - 1].file}.${format}`]] : []),
+      ...(i + 1 < model.articles.length ? [['Next', `${model.articles[i + 1].file}.${format}`]] : []),
+    ];
+    const navigation = format === 'html'
+      ? `<nav>${neighbors.map(([name, href]) => `<a href="${href}">${name}</a>`).join(' · ')}</nav>${noticeHtml}`
+      : neighbors.map(([name, href]) => `[${name}](${href})`).join(' · ') + `\n\n${noticeMd}`;
+    const page = mapDocument(model, article, assets, { format });
+    const all = mapDocument(model, article, assets, { format, combined: true });
+    if (format === 'html') {
+      files.set(`posts/${article.file}.html`, toHtml(page, { styleHref: '../assets/style.css', navigation, collapseReplies: true }));
+      combined.push(`<section class="entry" id="entry-${article.file}">${toHtml(all, { fragment: true, headingLevel: 2, collapseReplies: true })}</section>`);
+    } else {
+      files.set(`posts/${article.file}.md`, toMarkdown(page, { emojiImages: true, navigation }));
+      combined.push(`<a id="entry-${article.file}"></a>\n\n${toMarkdown(all, { frontMatter: false, headingLevel: 2, emojiImages: true })}`);
+    }
+  }
+  const contentsHtml = `<ol>${model.articles.map((a) => `<li><a href="#entry-${a.file}">${escHtml(a.title)}</a></li>`).join('')}</ol>`;
+  const contentsMd = model.articles.map((a) => `- [${escapeMd(a.title)}](#entry-${a.file})`).join('\n');
+  files.set(allName, format === 'html'
+    ? htmlPage(`<nav><a href="${indexName}">Index</a></nav>${headerHtml}${contentsHtml}${combined.join('\n')}`)
+    : `${headerMd}[Index](${indexName})\n\n${contentsMd}\n\n${combined.join('\n')}`);
+  files.set('manifest.json', JSON.stringify({
+    formatVersion: 1, source: model.source, author: model.author, tag: model.tag, format,
+    fetchedAt: model.fetchedAt, exportedAt, partial, includeDiscussion: model.includeDiscussion,
+    warnings, omissions,
+    articles: model.articles.map((a) => ({ id: a.id, file: `posts/${a.file}.${format}`, source: a.url, statuses: a.posts.map((p) => p.id), replies: a.replies.map((p) => p.id) })),
+    assets: [...assets].map(([url, asset]) => ({ source: url, file: asset.path })),
+  }, null, 2) + '\n');
+  return files;
 }

@@ -12,10 +12,21 @@
   <header class="top">
     <h1><a href="./">fedithread</a></h1>
     <form id="form" autocomplete="off">
-      <input id="url" type="text" name="url" placeholder="Paste a link to any post in a thread, e.g. https://mastodon.social/@user/1234567890" spellcheck="false" required>
+      <input id="url" type="text" name="url" aria-label="Post or author-tagged collection URL" placeholder="Paste a post URL or an author/tagged/hashtag URL" spellcheck="false" required>
       <button type="submit">Read</button>
     </form>
     <p id="status" aria-live="polite"></p>
+    <div id="build-panel" hidden>
+      <svg class="book-builder" viewBox="0 0 96 72" width="96" height="72" aria-hidden="true">
+        <path class="book" d="M12 35 Q30 28 48 38 Q66 28 84 35 V63 Q66 56 48 66 Q30 56 12 63 Z"/>
+        <path class="spine" d="M48 38 V66"/>
+        <g class="flying-page"><path d="M35 4 H59 V30 H35 Z"/><path class="ink" d="M40 11 H54 M40 17 H54 M40 23 H50"/></g>
+        <path class="smile" d="M40 48 Q48 55 56 48"/>
+      </svg>
+      <div class="build-copy"><strong id="build-phase">Gathering pages</strong><span id="build-count" class="muted"></span></div>
+      <button id="cancel-build" type="button">Pause</button>
+      <button id="continue-build" type="button" hidden>Continue</button>
+    </div>
     <p id="home-row">
       <label for="home">Your instance <span class="optional">(optional)</span>:</label>
       <input id="home" type="text" placeholder="mastodon.example" spellcheck="false" autocomplete="off" size="22">
@@ -25,11 +36,16 @@
       <button id="expand-all" type="button">Expand all forks</button>
       <button id="collapse-all" type="button">Collapse all forks</button>
       <button id="share" type="button" title="Copy a link that reopens this thread. It contains only the post address: the instance you read it through and the post id.">Share</button>
-      <span class="save">
+      <span class="save" id="thread-save">
         <span class="muted">Save as</span>
         <button id="save-html" type="button" title="Download the thread as a standalone web page">HTML</button>
         <button id="save-md" type="button" title="Download the thread as a Markdown document">Markdown</button>
         <label title="Include replies from other people as a Replies section"><input id="save-forks" type="checkbox" checked> with forks</label>
+      </span>
+      <span id="series-tools" hidden>
+        <label><input id="series-discussion" type="checkbox"> Include discussion</label>
+        <button id="save-site-html" type="button">HTML ZIP</button>
+        <button id="save-site-md" type="button">Markdown ZIP</button>
       </span>
     </div>
     <p id="share-row" hidden>
@@ -37,10 +53,18 @@
       <input id="share-link" type="text" readonly spellcheck="false" autocomplete="off">
       <span id="share-hint" class="muted" aria-live="polite"></span>
     </p>
+    <section id="archive-warning" hidden aria-labelledby="archive-warning-title">
+      <h2 id="archive-warning-title">Save an incomplete archive?</h2>
+      <p>Some requested content or images could not be collected. Missing images will be labeled source links. The archive and its manifest will clearly identify these gaps.</p>
+      <ul id="archive-gaps"></ul>
+      <button id="confirm-archive" type="button">Save partial ZIP</button>
+      <button id="retry-archive" type="button">Retry</button>
+      <button id="dismiss-archive" type="button">Cancel</button>
+    </section>
   </header>
   <main id="thread"></main>
   <footer class="bottom">
-    <p>Reads public threads anonymously via the Mastodon API. The original poster's own replies form the main line; replies from others are collapsed forks. Nothing is stored or sent anywhere but the instance in the link.</p>
+    <p>Reads public threads and tagged author collections anonymously. API requests go to the instance in the link; images and emoji may come from its media servers. Reading needs no account. Exports are created locally in your browser, with no uploads, analytics, or proxy.</p>
     <p class="source"><a href="https://github.com/xjamesmorris/fedithread">Source on GitHub</a></p>
   </footer>
   <script type="module" src="js/main.js"></script>

@@ -1,8 +1,79 @@
 # fedithread handoff
 
-Status as of 2026-09-07. Live at https://xjamesmorris.github.io/fedithread/,
+Live at https://xjamesmorris.github.io/fedithread/,
 source at https://github.com/xjamesmorris/fedithread, deployed by GitHub Pages
 from the `main` branch root.
+
+## lennart-mode implementation
+
+The repository includes tagged-author mini-blogs. Deployment uses the existing
+`main`-branch GitHub Pages setup; the app itself has no automatic publishing
+or GitHub integration.
+
+Paste `https://mastodon.social/@pid_eins/tagged/systemd262` to build an
+oldest-first index, individual articles, or Read all. Membership is literal:
+all matching author threads, including announcements; repeated tagged
+continuations resolve to one article. The author narrative is the existing
+earliest self-reply chain plus paths/continuations needed to retain tagged
+branches. Conversations with other authors are not silently added to the
+narrative. Discussion is optional and off by default.
+
+HTML ZIP and Markdown ZIP produce linked document trees, including a combined
+document, local images/emoji, and a completion/provenance manifest. HTML has no
+scripts and opens from disk; Markdown uses a root README and relative links.
+Audio/video stay external; sensitive images stay labeled links. Missing media
+or content requires an explicit partial-save confirmation, and the resulting
+pages/manifest are labeled. Image budgets are 10 MiB each/50 MiB total; the
+STORE-only ZIP writer caps output at 64 MiB. No dependencies or build step were
+added.
+
+The collector first exhausts the tagged account endpoint, then scans the
+author's timeline once to recover untagged continuations. It does not launch
+the old full collector for every article. Opaque string cursors, shared
+in-memory caches and a strict 80-request batch budget make Continue resumable.
+API calls are currently serialized (within the maximum-four requirement);
+HTTP 429 stops work without an automatic retry loop. Parent and discussion
+gaps are surfaced rather than swallowed.
+
+The reference read produced 37 roots in nine API requests: all 35 roots in
+Lennart's blog index, plus two cross-tagged announcements. The representative
+first/eighteenth/last articles had 4/3/7 narrative statuses. These are snapshot
+observations, not production constants or a promise about future live counts.
+The tag really does include the older announcement; do not "fix" it by
+silently filtering to the numbered articles.
+
+New routes retain `?url=`; series `&post=<root-id>` selects an article and
+`&view=all` selects Read all. `js/share.js` canonicalizes these without including
+home-instance or discussion settings. Same-collection navigation reuses
+completed work; a new input clears it. Abort/stale-result guards apply to
+collection, clipboard completion, image downloads and ZIP creation.
+
+The build panel is a small inline SVG/CSS book animation, with real phase/count
+text, Pause/Continue and a reduced-motion version. It is also used for image
+collection and ZIP generation; the ZIP CRC loop yields so cancellation and
+animation remain responsive.
+
+### Review and verification
+
+Run `npm test` from the repository root, then `npm run serve` and open
+`http://localhost:8000/`. Check the reference tagged URL, oldest-first
+index/article/Read all navigation, the default-off discussion option, clean
+Share links, both ZIP formats, and partial-export confirmation. Also check an
+ordinary status URL to verify the original toolbar, forks, Reply and individual
+HTML/Markdown saves remain available.
+
+Offline automated tests cover multi-page discovery, untagged continuations,
+deduplication and tagged branches, exact request-budget/resume behavior,
+API errors/429/cancellation, archive navigation and asset rewriting, byte-limit
+boundaries, unsafe image types, and ZIP CRC/path/size behavior.
+The browser replay checks exercise the real DOM/sanitizer/main module,
+history navigation, lazy discussion, clipboard races, cancellation, partial
+confirmation and retry, legacy thread saves, and light/dark/reduced-motion
+presentation. Generated ZIPs are also read by Python's independent ZIP reader.
+
+No helper server is intended to remain running after verification. The next
+review surface is the mini-blog UI plus extracted HTML/Markdown trees, not a
+GitHub integration or deployment workflow.
 
 ## What it does
 
@@ -20,8 +91,9 @@ outlined and scrolled into view. `?url=` makes any view shareable.
   is a fork. Agreed with the owner before implementation.
 - **Vanilla ES modules, no build, no dependencies.** Must keep working straight
   from a GitHub Pages checkout. Tests use `node --test` only.
-- **Anonymous only, no proxies.** The page talks only to the instance named in
-  the link. Do not add a CORS proxy; the footer promises this to users.
+- **Anonymous only, no proxies.** API reads stay on the instance named in the
+  link. Images may come from media/CDN URLs supplied by that instance; downloads
+  omit credentials/referrers. Do not add a CORS proxy or uploading service.
 - **Client-side sanitising** of status HTML through an allowlist even though the
   server already sanitises. Keep `js/sanitize.js` strict.
 
@@ -34,16 +106,21 @@ outlined and scrolled into view. `?url=` makes any view shareable.
 | `js/parse.js` | `parseStatusUrl(text)` -> `{host, id}` or null. Pure, tested |
 | `js/api.js` | `getJson` with 15 s timeout and friendly error messages, `fetchStatus`, `fetchContext`, `fetchAccountStatuses`, `pLimit` |
 | `js/thread.js` | `collectThread` (network), `buildTree`, `classifyNodes`, `countDescendants` (pure, tested) |
+| `js/series.js` | `createSeries`, `collectSeries`, pure `groupArticles`/`seriesSnapshot`, resumable discovery and optional discussion |
 | `js/sanitize.js` | Allowlist sanitiser, custom emoji substitution |
 | `js/render.js` | Status cards, media, polls, content warnings, lazy fork groups, Reply and Open links |
+| `js/series-render.js` | Index, article and Read all views using shared body/fork rendering |
 | `js/settings.js` | Home instance in `localStorage`, `normalizeHost`, `replyUrl` (pure, tested) |
 | `js/export.js` | `buildExport` (tree -> document model), `toHtml`, `toMarkdown`, `suggestedFileName`, plus a tiny HTML tokenizer and HTML-to-Markdown converter (pure, tested) |
 | `js/share.js` | `statusRef` and `shareUrl`: the Share link, built from `{host, id, acct}` and checked against the parser (pure, tested) |
+| `js/archive.js` | Image download limits, caching, failures and HTML/Markdown ZIP file maps |
+| `js/zip.js` | STORE-only UTF-8 ZIP writer with CRCs, cancellation, size/path guards |
 | `js/main.js` | Wiring, `?url=` deep links, history, progress text, Share button and clipboard, `fedithread:rendered` event |
 | `test/*.test.js` | Parser cases, tree and main-line cases, collector against a mocked capped server, export documents, share-link round trips |
 
-Everything network-related lives in `collectThread`. Everything pure is
-exported separately so it can be tested without a browser or network.
+API access is centralized in `api.js`; thread/series collectors orchestrate it.
+`archive.js` separately fetches referenced media. Pure collection/document/ZIP
+logic is exported so it can be tested without a browser or live network.
 
 ## The one thing you must understand about the API
 
@@ -81,7 +158,7 @@ Other findings from live testing:
 ## How to verify
 
 ```
-npm test                          # 80 tests, no network
+npm test                          # offline tests, no network
 python3 -m http.server 8000       # ES modules do not load over file://
 ```
 
@@ -113,8 +190,9 @@ Visual checks: see "Visual checks without a browser driver" below.
   available" placeholder above it. Exports list orphans after the forks as
   "replying to a post by X that could not be fetched". Where an orphan really
   belongs in the thread is unknown, so the end is the only honest place.
-- The only setting is the home instance. It lives under the `localStorage`
-  key `fedithread.home`.
+- The only persisted setting is the home instance, under `localStorage`
+  key `fedithread.home`. Discussion and collection progress stay in memory;
+  starting a new source resets discussion to off.
 - Fork groups summarise the first three authors and "N more". No per-fork
   descendant preview.
 - The only style knobs are the CSS variables at the top of `css/style.css`.

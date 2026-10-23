@@ -85,20 +85,9 @@ export async function collectThread(host, id, { onProgress = () => {}, signal, l
   }
 
   // Fill pass: nodes that claim more replies than we know about.
-  const childCounts = () => {
-    const counts = new Map();
-    for (const s of statuses.values()) {
-      if (s.in_reply_to_id) counts.set(s.in_reply_to_id, (counts.get(s.in_reply_to_id) || 0) + 1);
-    }
-    return counts;
-  };
-
   let truncated = false;
   for (;;) {
-    const counts = childCounts();
-    const todo = [...statuses.values()]
-      .filter((s) => !expanded.has(s.id) && (s.replies_count || 0) > (counts.get(s.id) || 0))
-      .sort((a, b) => (b.replies_count || 0) - (a.replies_count || 0));
+    const todo = contextCandidates(buildTree([...statuses.values()]), expanded);
     if (todo.length === 0) break;
     const budget = limits.maxRequests - requests;
     if (budget <= 0) { truncated = true; break; }
@@ -108,13 +97,23 @@ export async function collectThread(host, id, { onProgress = () => {}, signal, l
   }
 
   // Replies the server told us about but never showed us.
-  const counts = childCounts();
-  let missing = 0;
-  for (const s of statuses.values()) {
-    if (expanded.has(s.id)) missing += Math.max(0, (s.replies_count || 0) - (counts.get(s.id) || 0));
-  }
+  const missing = missingReplies(buildTree([...statuses.values()]), expanded);
 
   return { root, start, statuses: [...statuses.values()], requests, truncated, missing };
+}
+
+export function contextCandidates(tree, expanded) {
+  return [...tree.byId.values()]
+    .filter((s) => !expanded.has(s.id) && (s.replies_count || 0) > (tree.children.get(s.id)?.length || 0))
+    .sort((a, b) => (b.replies_count || 0) - (a.replies_count || 0));
+}
+
+export function missingReplies(tree, expanded) {
+  let missing = 0;
+  for (const s of tree.byId.values()) {
+    if (expanded.has(s.id)) missing += Math.max(0, (s.replies_count || 0) - (tree.children.get(s.id)?.length || 0));
+  }
+  return missing;
 }
 
 // Pure: build parent->children map, sorted by creation time.

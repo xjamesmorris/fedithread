@@ -1,6 +1,7 @@
 # fedithread
 
-A small static web app that reads a Mastodon (fediverse) thread as one page.
+A small static web app that reads a Mastodon (fediverse) thread as one page,
+or an author's tagged threads as a mini-blog.
 
 Paste a link to **any post in a thread**. fedithread finds the root, collects the
 whole thread anonymously via the public Mastodon API, and renders it top to bottom.
@@ -22,6 +23,66 @@ https://<you>.github.io/fedithread/?url=https://mastodon.social/@user/1234567890
 Accepted link forms include Mastodon (`/@user/ID`, `/@user@remote/ID`,
 `/users/name/statuses/ID`), GoToSocial (`/@user/statuses/ID`), Pleroma and
 Akkoma (`/notice/ID`), Pixelfed (`/p/user/ID`), or just `host ID`.
+
+## lennart-mode: a tagged mini-blog
+
+Paste an author's tagged-posts URL, for example:
+
+`https://mastodon.social/@pid_eins/tagged/systemd262`
+
+fedithread collects the matching threads and presents an **index**, individual
+articles with previous/next navigation, and **Read all** with a contents list.
+Everything is oldest first. Each article combines the author's main self-reply
+chain, including untagged continuations. Matching posts in the same thread are
+deduplicated; tagged author branches are retained. Replies to other people do
+not become part of the author's narrative.
+
+This works for any author on an instance supporting the anonymous account APIs,
+not only Lennart. It includes **all** matching threads, including announcements;
+it does not try to infer which posts are editorially important. The original
+`#systemd262` example includes two announcements as well as 35 numbered articles.
+
+**Include discussion** is off by default. Enable it to load replies, kept
+collapsed below the article. Each article also links to the existing full
+thread reader. Share copies the collection and selected view, without your
+reply instance or discussion preference. Collection links use `?url=`, with
+`&post=<root-id>` for an article or `&view=all` for the combined view.
+
+A small animated book shows real collection/export progress; it becomes static
+when your system requests reduced motion. **Pause** keeps collected data in this
+tab, and **Continue** resumes it. API work is limited to 80 requests per batch.
+Rate limits and errors stop work visibly rather than silently cutting off the
+collection. Reloading or submitting a new Read starts a fresh collection.
+
+### Save the mini-blog
+
+**HTML ZIP** downloads a document tree with `index.html`, `all.html`, article
+pages under `posts/`, local styles/images under `assets/`, and `manifest.json`.
+Extract it and open `index.html`: no JavaScript, web server, or fedithread is
+needed to read the saved pages.
+
+**Markdown ZIP** has `README.md` as its index, `all.md`, individual Markdown
+articles, and the same local images and manifest. Relative navigation and image
+links let you copy the extracted tree into a GitHub repository. Uploading or
+publishing is left to you; the app does not access GitHub.
+
+Referenced images and custom emoji are bundled once and reused across articles.
+Alt text, attribution, content warnings, source links, and any selected discussion
+are preserved. Sensitive images remain labeled links; audio/video remain
+external links and need a connection. HTML discussion is collapsed; Markdown
+discussion is a separate section.
+
+Images are limited to 10 MiB each and 50 MiB in total. PNG, JPEG, GIF, WebP and
+AVIF are supported; active SVG/HTML assets are not bundled. CORS failures,
+missing images, inaccessible posts, and unfinished collection are reported.
+**Retry** can recover a failed image download; otherwise saving requires explicit
+confirmation of a **partial archive**, labeled in its pages and manifest.
+Missing images become labeled source links, not hidden network dependencies.
+
+ZIPs are uncompressed to keep the app dependency-free. The total archive is
+limited to 64 MiB; larger archives fail explicitly instead of dropping files.
+Successfully downloaded images are cached only in the current collection's
+memory, so saving the other format need not download them again.
 
 ## Reply from your own account
 
@@ -69,7 +130,8 @@ python3 -m http.server 8000
 # then open http://localhost:8000/
 ```
 
-Run the unit tests (URL parsing, tree building, main-line selection, export, share link):
+Run the offline tests (parsing, collection/resume, thread classification,
+exports, relative links, image limits, ZIP generation, sharing):
 
 ```
 npm test
@@ -82,11 +144,15 @@ npm test
 | `js/parse.js` | turn a pasted link into `{host, id}` |
 | `js/api.js` | fetch with timeout and friendly error messages |
 | `js/thread.js` | collect the thread (working around anonymous API caps), build the tree, pick the main line |
+| `js/series.js` | collect tagged author threads with one shared timeline scan, resumable budgets, and optional discussion |
 | `js/sanitize.js` | allowlist HTML sanitizer and custom emoji |
 | `js/render.js` | cards, main line, collapsible forks |
+| `js/series-render.js` | mini-blog index, article and Read all views |
 | `js/settings.js` | home instance setting and the remote-interaction reply URL |
 | `js/share.js` | the Share link: this page with `?url=` pointing at the post |
 | `js/export.js` | thread as a standalone HTML page or Markdown document |
+| `js/archive.js` | bundle referenced images and assemble HTML/Markdown document trees |
+| `js/zip.js` | bounded, dependency-free ZIP generation |
 | `js/main.js` | wiring, `?url=` deep links, history |
 
 ## Limitations
@@ -103,6 +169,12 @@ npm test
   says roughly how many are missing.
 - Only the replies known to the instance in the link are shown. Remote replies the
   instance has never seen will be missing.
+- Tagged collections require anonymous account lookup and author/tag filtering.
+  Some otherwise thread-compatible servers do not support these. The app does
+  not use a proxy, global hashtag search, or authentication as a workaround.
+- API requests stay on the instance in the input URL. Displaying or bundling
+  images can contact media/CDN URLs supplied by that instance, without
+  credentials. Exports are generated locally; nothing is uploaded.
 - Replies whose parent could not be fetched (deleted, private, or not visible
   anonymously) are shown at the end under a placeholder card for the missing post.
 

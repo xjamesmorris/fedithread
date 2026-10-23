@@ -47,6 +47,7 @@ export function parseStatusUrl(input) {
   if (!host) return null;
 
   const path = url.pathname;
+  if (/^\/(?:@[^/]+|users\/[^/]+)\/tagged(?:\/|$)/.test(path)) return null;
   for (const re of PATH_PATTERNS) {
     const m = path.match(re);
     if (m) return { host, id: m[1] };
@@ -58,6 +59,42 @@ export function parseStatusUrl(input) {
   if (last && ID_RE.test(last) && segs.length >= 2) return { host, id: last };
 
   return null;
+}
+
+export function parseSeriesUrl(input) {
+  let url;
+  try {
+    const text = String(input ?? '').trim();
+    url = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(text) ? text : `https://${text}`);
+  } catch {
+    return null;
+  }
+  if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) return null;
+  const host = cleanHost(url.host);
+  const match = url.pathname.match(/^\/@([^/]+)\/tagged\/([^/]+)\/?$/);
+  if (!host || !match) return null;
+  let acct, tag;
+  try {
+    acct = decodeURIComponent(match[1]);
+    tag = decodeURIComponent(match[2]).normalize('NFC');
+  } catch {
+    return null;
+  }
+  if (!/^[a-z0-9_]+(?:@[a-z0-9.-]+(?::\d+)?)?$/i.test(acct)) return null;
+  if (!/^[\p{L}\p{M}\p{N}_]+$/u.test(tag)) return null;
+  return { host, acct, tag };
+}
+
+export function parseInput(input) {
+  const series = parseSeriesUrl(input);
+  if (series) return { kind: 'series', ...series };
+  const thread = parseStatusUrl(input);
+  return thread ? { kind: 'thread', ...thread } : null;
+}
+
+export function seriesRef(target) {
+  const ref = `${scheme(target.host)}://${target.host}/@${encodeURIComponent(target.acct).replace(/%40/g, '@')}/tagged/${encodeURIComponent(target.tag)}`;
+  return parseSeriesUrl(ref) ? ref : null;
 }
 
 export const scheme = (host) => (host.startsWith('localhost') ? 'http' : 'https');

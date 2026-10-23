@@ -2,7 +2,7 @@ import { sanitizeHtml, applyCustomEmoji, textWithEmoji } from './sanitize.js';
 import { countDescendants, orphanGroups, findAccount } from './thread.js';
 import { getHomeInstance, replyUrl } from './settings.js';
 
-const h = (tag, attrs = {}, ...children) => {
+export const h = (tag, attrs = {}, ...children) => {
   const el = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
     if (v == null || v === false) continue;
@@ -74,21 +74,10 @@ function renderPoll(poll) {
   return h('div', {}, list, h('small', { class: 'muted' }, `${total} vote${total === 1 ? '' : 's'}${poll.expired ? ', closed' : ''}`));
 }
 
-function renderCard(status, { host, isStart }) {
-  const acct = status.account || {};
+export function renderBody(status) {
   const content = applyCustomEmoji(sanitizeHtml(status.content), status.emojis);
   const body = h('div', { class: 'body' }, h('div', { class: 'content' }, content), renderMedia(status), renderPoll(status.poll));
-
-  const card = h('article', { class: `card${isStart ? ' start' : ''}`, id: `s-${status.id}` },
-    h('header', {},
-      h('a', { href: acct.url, target: '_blank', rel: 'noopener noreferrer', class: 'avatar-link' },
-        h('img', { class: 'avatar', src: acct.avatar_static || acct.avatar, alt: '', loading: 'lazy' })),
-      h('div', { class: 'who' },
-        h('a', { class: 'name', href: acct.url, target: '_blank', rel: 'noopener noreferrer' }, textWithEmoji(acct.display_name || acct.username, acct.emojis)),
-        h('span', { class: 'handle' }, handleOf(acct, host))),
-      h('a', { class: 'time', href: status.url || status.uri, target: '_blank', rel: 'noopener noreferrer', title: status.created_at }, fmtTime(status.created_at))),
-  );
-
+  const wrapper = h('div', { class: 'post-body' });
   if (status.spoiler_text) {
     body.hidden = true;
     const btn = h('button', { class: 'cw', type: 'button', 'aria-expanded': 'false' },
@@ -98,9 +87,24 @@ function renderCard(status, { host, isStart }) {
       btn.setAttribute('aria-expanded', String(!body.hidden));
       btn.querySelector('.cw-toggle').textContent = body.hidden ? ' Show' : ' Hide';
     });
-    card.append(btn);
+    wrapper.append(btn);
   }
-  card.append(body);
+  wrapper.append(body);
+  return wrapper;
+}
+
+function renderCard(status, { host, isStart, idPrefix = 's-' }) {
+  const acct = status.account || {};
+  const card = h('article', { class: `card${isStart ? ' start' : ''}`, id: `${idPrefix}${status.id}` },
+    h('header', {},
+      h('a', { href: acct.url, target: '_blank', rel: 'noopener noreferrer', class: 'avatar-link' },
+        h('img', { class: 'avatar', src: acct.avatar_static || acct.avatar, alt: '', loading: 'lazy' })),
+      h('div', { class: 'who' },
+        h('a', { class: 'name', href: acct.url, target: '_blank', rel: 'noopener noreferrer' }, textWithEmoji(acct.display_name || acct.username, acct.emojis)),
+        h('span', { class: 'handle' }, handleOf(acct, host))),
+      h('a', { class: 'time', href: status.url || status.uri, target: '_blank', rel: 'noopener noreferrer', title: status.created_at }, fmtTime(status.created_at))),
+    renderBody(status),
+  );
 
   card.append(h('footer', {},
     h('span', { title: 'Replies' }, '↩ ', fmtCount(status.replies_count)),
@@ -133,7 +137,7 @@ function renderPlaceholder({ account, host, kind }) {
 // Render the tree. Main-line children go inline; fork children are grouped
 // under a collapsed toggle that renders lazily on first expand. Replies whose
 // parent is missing go under a placeholder card at the end.
-export function renderThread(tree, main, { host, rootId, startId }) {
+export function renderThread(tree, main, { host, rootId, startId, discussionOnly = false, idPrefix = 's-' }) {
   const container = h('div', { class: 'thread' });
   const forks = [];
 
@@ -167,16 +171,21 @@ export function renderThread(tree, main, { host, rootId, startId }) {
 
   const renderNode = (status, depth) => {
     const wrap = h('div', { class: `node${main.has(status.id) ? ' main' : ' fork'}` });
-    wrap.append(renderCard(status, { host, isStart: status.id === startId }));
+    wrap.append(renderCard(status, { host, isStart: status.id === startId, idPrefix }));
     wrap.append(...renderChildren(tree.children.get(status.id) || [], depth));
     return wrap;
   };
 
   const root = tree.byId.get(rootId);
-  if (root.in_reply_to_id) {
+  if (!discussionOnly && root.in_reply_to_id) {
     container.append(h('div', { class: 'node fork' }, renderPlaceholder({ account: findAccount(tree, root.in_reply_to_account_id), host, kind: 'ancestor' })));
   }
-  container.append(renderNode(root, 0));
+  if (discussionOnly) {
+    for (const id of main) {
+      const kids = (tree.children.get(id) || []).filter((s) => !main.has(s.id));
+      if (kids.length) container.append(forkGroup(kids, 0));
+    }
+  } else container.append(renderNode(root, 0));
 
   const orphans = orphanGroups(tree, rootId);
   if (orphans.length) {

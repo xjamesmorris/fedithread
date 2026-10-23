@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { shareUrl, statusRef } from '../js/share.js';
+import { shareUrl, statusRef, seriesShareUrl, seriesRoute } from '../js/share.js';
 import { parseStatusUrl } from '../js/parse.js';
 
 // The page's own query and hash must be dropped, the path kept.
@@ -52,4 +52,24 @@ test('share link never carries the page query, hash or the reader settings', () 
   const u = new URL(link);
   assert.equal(u.hash, '');
   assert.deepEqual([...u.searchParams.keys()], ['url']);
+});
+
+test('series routes share only the source and public view selection', () => {
+  const target = { host: 'mastodon.social', acct: 'pid_eins', tag: 'systemd262' };
+  for (const route of [{}, { post: '117207780226511430' }, { view: 'all' }]) {
+    const link = seriesShareUrl(`${BASE}?home=private.example&discussion=true#old`, target, route);
+    const parsed = new URL(link);
+    assert.equal(parsed.searchParams.get('url'), 'https://mastodon.social/@pid_eins/tagged/systemd262');
+    assert.equal(parsed.hash, '');
+    assert.equal(parsed.searchParams.has('home'), false);
+    assert.equal(parsed.searchParams.has('discussion'), false);
+    assert.deepEqual(seriesRoute(link), { post: route.post || '', view: route.view || '', warning: '' });
+  }
+});
+
+test('conflicting or invalid collection selectors return the index with an explanation', () => {
+  for (const query of ['post=1&view=all', 'view=unknown', 'post=1&post=2', 'view=all&view=all']) {
+    assert.deepEqual(seriesRoute(`${BASE}?${query}`), { post: '', view: '', warning: 'That collection view is invalid. Showing the index instead.' });
+  }
+  assert.equal(seriesShareUrl(BASE, { host: 'x.test', acct: 'a', tag: 'x' }, { post: '1', view: 'all' }), null);
 });

@@ -6,7 +6,7 @@
 // different id). So the link holds only: the app's address, the instance the
 // thread was read through, the author's handle, and the post id.
 
-import { parseStatusUrl, scheme } from './parse.js';
+import { parseStatusUrl, scheme, seriesRef } from './parse.js';
 
 // Percent-encode a query value but keep : / @ readable, so the link looks
 // like a link. URLSearchParams decodes both forms identically.
@@ -32,4 +32,22 @@ export function shareUrl(pageUrl, target) {
   if (!ref) return null;
   const page = new URL(pageUrl);
   return `${page.origin}${page.pathname}?url=${prettyParam(ref)}`;
+}
+
+export function seriesShareUrl(pageUrl, target, { post = '', view = '' } = {}) {
+  if ((post && view) || (view && view !== 'all')) return null;
+  const ref = seriesRef(target);
+  if (!ref) return null;
+  const page = new URL(pageUrl);
+  return `${page.origin}${page.pathname}?url=${prettyParam(ref)}${post ? `&post=${encodeURIComponent(post)}` : ''}${view === 'all' ? '&view=all' : ''}`;
+}
+
+export function seriesRoute(pageUrl) {
+  const params = new URL(pageUrl).searchParams;
+  const post = params.get('post') || '';
+  const view = params.get('view') || '';
+  if ((post && view) || (view && view !== 'all') || params.getAll('post').length > 1 || params.getAll('view').length > 1) {
+    return { post: '', view: '', warning: 'That collection view is invalid. Showing the index instead.' };
+  }
+  return { post, view, warning: '' };
 }
