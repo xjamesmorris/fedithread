@@ -29,6 +29,8 @@ const shareLink = $('#share-link');
 const shareHint = $('#share-hint');
 const threadSave = $('#thread-save');
 const seriesTools = $('#series-tools');
+const navigationInput = $('#series-navigation');
+const joinInput = $('#series-join');
 const discussionInput = $('#series-discussion');
 const siteHtmlBtn = $('#save-site-html');
 const siteMdBtn = $('#save-site-md');
@@ -63,6 +65,9 @@ function resetLoadedState() {
   buildPanel.classList.remove('active');
   threadEl.removeAttribute('aria-busy');
   discussionInput.checked = false;
+  navigationInput.checked = false;
+  joinInput.checked = false;
+  document.body.classList.remove('with-series-sidebar');
   toolbar.hidden = true;
   shareRow.hidden = true;
   shareLink.value = '';
@@ -114,6 +119,14 @@ function discussionRoots(session, all = false) {
   return session.route.post && ids.includes(session.route.post) ? [session.route.post] : [];
 }
 
+function selectFirstSidebarPost(session, articles) {
+  if (current !== session || session.route.layout !== 'sidebar' || session.route.post || session.route.view) return;
+  const first = (articles || seriesSnapshot(session.state).articles)[0];
+  if (!first) return;
+  session.route = { ...session.route, post: first.id };
+  history.replaceState({}, '', seriesShareUrl(location.href, session.state.target, session.route));
+}
+
 function showSeries(session) {
   if (current !== session) return;
   let snapshot;
@@ -127,10 +140,32 @@ function showSeries(session) {
     return;
   }
   if (session.route.post && session.state.stage === 'ready' && !snapshot.articles.some((a) => a.id === session.route.post)) {
-    session.route = { post: '', view: '', warning: 'That article is not available. Showing the collection index.' };
-    history.replaceState({}, '', seriesShareUrl(location.href, session.state.target));
+    session.route = {
+      ...session.route, post: '', view: '',
+      warning: session.route.layout === 'sidebar'
+        ? 'That article is not available. Showing the first available article.'
+        : 'That article is not available. Showing the collection index.',
+    };
+    history.replaceState({}, '', seriesShareUrl(location.href, session.state.target, session.route));
   }
+  selectFirstSidebarPost(session, snapshot.articles);
+  const oldSidebar = threadEl.querySelector('.series-sidebar');
+  if (oldSidebar) session.sidebarScroll = oldSidebar.scrollTop;
+  navigationInput.checked = session.route.layout === 'sidebar';
+  joinInput.checked = session.route.join === true;
+  document.body.classList.toggle('with-series-sidebar', navigationInput.checked && snapshot.articles.length > 0);
   threadEl.replaceChildren(renderSeries(snapshot, { pageUrl: location.href, route: session.route }));
+  const sidebar = threadEl.querySelector('.series-sidebar');
+  if (sidebar) {
+    sidebar.scrollTop = session.sidebarScroll || 0;
+    const active = sidebar.querySelector('a[aria-current="page"]');
+    if (active) {
+      const top = active.getBoundingClientRect().top - sidebar.getBoundingClientRect().top;
+      if (top < 0) sidebar.scrollTop += top - 8;
+      else if (top + active.offsetHeight > sidebar.clientHeight) sidebar.scrollTop += top + active.offsetHeight - sidebar.clientHeight + 8;
+    }
+    session.sidebarScroll = sidebar.scrollTop;
+  }
   refreshReplyLinks();
   toolbar.hidden = false;
   toolbarMode(true);
@@ -169,6 +204,8 @@ async function runSeries({ allDiscussion = false } = {}) {
   try {
     const onProgress = (progress) => { if (inflight === ctrl && !ctrl.signal.aborted) buildProgress(progress); };
     await collectSeries(session.state, { signal: ctrl.signal, onProgress });
+    if (current !== session || ctrl.signal.aborted) return false;
+    selectFirstSidebarPost(session);
     const used = session.state.batchRequests;
     const roots = discussionRoots(session, allDiscussion);
     if (session.state.stage === 'ready' && roots.length) {
@@ -225,6 +262,8 @@ async function load(text, { push = true, route = { post: '', view: '', warning: 
     u.searchParams.set('url', text.trim());
     u.searchParams.delete('post');
     u.searchParams.delete('view');
+    u.searchParams.delete('layout');
+    u.searchParams.delete('join');
     history.pushState({ url: text.trim() }, '', u);
   }
   document.title = `${target.host} thread · fedithread`;
@@ -345,6 +384,7 @@ async function writeArchive(archive, session, controller = new AbortController()
     downloadBlob(archive.name, blob);
     setStatus(`Saved ${archive.partial ? 'a labeled partial archive' : 'the collection archive'} as ${archive.name}.`);
   } catch (err) {
+    if (inflight !== controller || current !== session) return;
     if (!controller.signal.aborted) { console.error(err); setStatus(`Could not save the archive: ${err.message}`); }
     else if (current === session) setStatus('Archive creation cancelled. No download was started.');
   } finally {
@@ -368,7 +408,9 @@ async function saveSeries(format) {
   try {
     await new Promise((resolve) => setTimeout(resolve, 0));
     ctrl.signal.throwIfAborted();
-    const model = buildSeriesExport(seriesSnapshot(session.state, { includeDiscussion: discussionInput.checked }), { content: statusContentHtml });
+    const model = buildSeriesExport(seriesSnapshot(session.state, { includeDiscussion: discussionInput.checked }), {
+      content: statusContentHtml, joinContinuations: session.route.join === true,
+    });
     const archive = await prepareArchive(model, { format, signal: ctrl.signal, cache: session.assets, onProgress: (p) => {
       if (inflight === ctrl && !ctrl.signal.aborted) buildProgress(p);
     } });
@@ -385,6 +427,7 @@ async function saveSeries(format) {
       $('#confirm-archive').focus();
     } else await writeArchive(archive, session, ctrl);
   } catch (err) {
+    if (inflight !== ctrl || current !== session) return;
     if (!ctrl.signal.aborted) { console.error(err); setStatus(`Could not prepare the archive: ${err.message}`); }
     else if (current === session) setStatus('Archive preparation cancelled. No download was started.');
   } finally {
@@ -403,6 +446,16 @@ $('#dismiss-archive').addEventListener('click', () => { pendingArchive = null; a
 cancelBuild.addEventListener('click', () => inflight?.abort());
 continueBuild.addEventListener('click', () => runSeries());
 discussionInput.addEventListener('change', () => runSeries());
+navigationInput.addEventListener('change', () => {
+  if (current?.kind !== 'series') return;
+  const route = { ...current.route, layout: navigationInput.checked ? 'sidebar' : '' };
+  navigate(seriesShareUrl(location.href, current.state.target, route), { push: true });
+});
+joinInput.addEventListener('change', () => {
+  if (current?.kind !== 'series') return;
+  const route = { ...current.route, join: joinInput.checked };
+  navigate(seriesShareUrl(location.href, current.state.target, route), { push: true });
+});
 
 // Share: copy a link that reopens this thread, built only from the parsed
 // host and id and the author's handle. The home instance, fork state and
@@ -458,13 +511,17 @@ async function navigate(url, { push = false } = {}) {
     shareHint.textContent = '';
     current.route = seriesRoute(page.href);
     if (push) history.pushState({}, '', page);
-    if (current.route.warning) history.replaceState({}, '', seriesShareUrl(page.href, target));
+    if (current.route.warning) history.replaceState({}, '', seriesShareUrl(page.href, target, current.route));
     await runSeries();
     if (location.hash) {
-      try { document.getElementById(decodeURIComponent(location.hash.slice(1)))?.scrollIntoView(); }
+      try {
+        const section = document.getElementById(decodeURIComponent(location.hash.slice(1)));
+        section?.scrollIntoView();
+        if (section?.classList.contains('series-sidebar')) section.focus({ preventScroll: true });
+      }
       catch (err) { console.error(err); setStatus('The section link is invalid.'); }
     } else if (push) {
-      const heading = threadEl.querySelector('.story h2, .series-header h1');
+      const heading = threadEl.querySelector('.series-reading-title') || threadEl.querySelector('.story h2') || threadEl.querySelector('.series-header h1');
       if (heading) { heading.tabIndex = -1; heading.focus({ preventScroll: true }); heading.scrollIntoView({ block: 'start' }); }
     }
   } else if (text) await load(text, { push, route: seriesRoute(page.href) });

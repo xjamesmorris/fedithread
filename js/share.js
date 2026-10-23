@@ -34,20 +34,31 @@ export function shareUrl(pageUrl, target) {
   return `${page.origin}${page.pathname}?url=${prettyParam(ref)}`;
 }
 
-export function seriesShareUrl(pageUrl, target, { post = '', view = '' } = {}) {
-  if ((post && view) || (view && view !== 'all')) return null;
+export function seriesShareUrl(pageUrl, target, { post = '', view = '', layout = '', join = false } = {}) {
+  if ((post && view) || (view && view !== 'all') || (layout && layout !== 'sidebar') || typeof join !== 'boolean') return null;
   const ref = seriesRef(target);
   if (!ref) return null;
   const page = new URL(pageUrl);
-  return `${page.origin}${page.pathname}?url=${prettyParam(ref)}${post ? `&post=${encodeURIComponent(post)}` : ''}${view === 'all' ? '&view=all' : ''}`;
+  return `${page.origin}${page.pathname}?url=${prettyParam(ref)}${post ? `&post=${encodeURIComponent(post)}` : ''}${view === 'all' ? '&view=all' : ''}${layout === 'sidebar' ? '&layout=sidebar' : ''}${join ? '&join=1' : ''}`;
 }
 
 export function seriesRoute(pageUrl) {
   const params = new URL(pageUrl).searchParams;
   const post = params.get('post') || '';
   const view = params.get('view') || '';
+  const layout = params.get('layout') || '';
+  const join = params.get('join') || '';
   if ((post && view) || (view && view !== 'all') || params.getAll('post').length > 1 || params.getAll('view').length > 1) {
     return { post: '', view: '', warning: 'That collection view is invalid. Showing the index instead.' };
   }
-  return { post, view, warning: '' };
+  const route = { post, view, warning: '' };
+  const warnings = [];
+  if ((layout && layout !== 'sidebar') || params.getAll('layout').length > 1) {
+    warnings.push('That navigation layout is invalid. Using the standard layout instead.');
+  } else if (layout === 'sidebar') route.layout = layout;
+  if ((join && join !== '1') || params.getAll('join').length > 1) {
+    warnings.push('That continuation option is invalid. Showing separate source posts.');
+  } else if (join === '1') route.join = true;
+  route.warning = warnings.join(' ');
+  return route;
 }

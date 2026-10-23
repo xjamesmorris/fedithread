@@ -202,3 +202,28 @@ test('internal links prefer an article narrative over its copy in another discus
   const all = files.get('all.html');
   assert.ok(all.includes(`<a href="#s-${second.file}-${second.id}">URI source</a>`));
 });
+
+test('joined-text archives preserve namespaced anchors and record the selected option', async () => {
+  mockImages();
+  const source = model();
+  source.joinContinuations = true;
+  const first = source.articles[0];
+  first.posts[0].html = '<p>the cat...</p>';
+  first.posts[0].media = [];
+  const id = '100000000000000099';
+  first.posts.push({
+    ...first.posts[0], id, parentId: first.id, html: '<p>...sat on the mat.</p>',
+    url: `https://example.test/@author/${id}`, uri: `https://example.test/users/author/statuses/${id}`,
+  });
+  for (const format of ['html', 'md']) {
+    const result = await prepareArchive(source, { format });
+    const manifest = JSON.parse(result.files.get('manifest.json'));
+    assert.equal(manifest.joinContinuations, true);
+    assert.deepEqual(manifest.articles[0].statuses, [first.id, id]);
+    const all = result.files.get(`all.${format}`);
+    assert.ok(all.includes('the cat sat on the mat.'));
+    assert.ok(all.includes(`id="s-${first.file}-${id}"`));
+    assert.ok(result.files.get(`posts/${first.file}.${format}`).includes(`id="s-${id}"`));
+    checkLinks(result.files, format);
+  }
+});

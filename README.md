@@ -48,6 +48,24 @@ thread reader. Share copies the collection and selected view, without your
 reply instance or discussion preference. Collection links use `?url=`, with
 `&post=<root-id>` for an article or `&view=all` for the combined view.
 
+**Navigation pane** keeps a scrollable post list on the left and the selected
+article on the right. Enabling it from the index opens the oldest article;
+switching posts preserves the list's scroll position and reuses collected data.
+On narrow screens the list stacks above the article. This layout is an
+in-browser option; it does not change the layout of downloaded document trees.
+
+**Join continuations** removes the artificial breaks between the author's
+continuation posts. Paired boundary ellipses are joined with a single space:
+`the cat...` followed by `...sat on the mat` becomes `the cat sat on the mat`.
+Unicode ellipses work too. Formatting and real paragraph breaks are preserved;
+warnings, media, polls, and separate reply branches remain distinct boundaries.
+Original timestamps and links move into a collapsible **Source posts** section.
+This option also applies to HTML and Markdown ZIPs. Ordinary ellipses inside
+prose, code, or links are not rewritten.
+
+Both options are off by default and reset on a new Read. Share and browser
+history retain them through `&layout=sidebar` and `&join=1`.
+
 A small animated book shows real collection/export progress; it becomes static
 when your system requests reduced motion. **Pause** keeps collected data in this
 tab, and **Continue** resumes it. API work is limited to 80 requests per batch.

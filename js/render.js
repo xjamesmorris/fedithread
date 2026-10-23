@@ -74,8 +74,8 @@ function renderPoll(poll) {
   return h('div', {}, list, h('small', { class: 'muted' }, `${total} vote${total === 1 ? '' : 's'}${poll.expired ? ', closed' : ''}`));
 }
 
-export function renderBody(status) {
-  const content = applyCustomEmoji(sanitizeHtml(status.content), status.emojis);
+export function renderBody(status, { sanitizedContent } = {}) {
+  const content = sanitizedContent || applyCustomEmoji(sanitizeHtml(status.content), status.emojis);
   const body = h('div', { class: 'body' }, h('div', { class: 'content' }, content), renderMedia(status), renderPoll(status.poll));
   const wrapper = h('div', { class: 'post-body' });
   if (status.spoiler_text) {

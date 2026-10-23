@@ -48,6 +48,22 @@ home-instance or discussion settings. Same-collection navigation reuses
 completed work; a new input clears it. Abort/stale-result guards apply to
 collection, clipboard completion, image downloads and ZIP creation.
 
+Optional reading controls add `&layout=sidebar` for a scrollable left post list
+and right article pane, and `&join=1` for continuous author prose. Both default
+to off; Share/Back/Forward preserve them, and a new source resets them. Sidebar
+selection preserves list scrolling and exposes the active link through
+`aria-current`; narrow layouts stack the panes. Sidebar layout is browser-only,
+not a change to the downloaded site's layout.
+
+`joinContinuationPosts` in `js/export.js` operates only on already-sanitized
+document-model HTML. It joins direct same-author continuations, removes paired
+ASCII/Unicode boundary ellipses, and inserts one space. It retains paragraphs,
+formatting, source IDs, and separate CW/media/poll/branch boundaries. Code/link
+ellipses and unmatched ellipses are left alone. The browser and both archive
+formats use that same joiner; original timestamps/permalinks remain in a
+collapsible Source posts section, and the manifest records `joinContinuations`.
+Never bypass `statusContentHtml` when preparing joined HTML for the browser.
+
 The build panel is a small inline SVG/CSS book animation, with real phase/count
 text, Pause/Continue and a reduced-motion version. It is also used for image
 collection and ZIP generation; the ZIP CRC loop yields so cancellation and
@@ -61,6 +77,11 @@ index/article/Read all navigation, the default-off discussion option, clean
 Share links, both ZIP formats, and partial-export confirmation. Also check an
 ordinary status URL to verify the original toolbar, forks, Reply and individual
 HTML/Markdown saves remain available.
+
+For the reading options, check Navigation pane selection and independent list
+scrolling, Next/Previous and history, joined versus original text, Source posts,
+and joined HTML/Markdown downloads. Both controls must remain off for a fresh
+collection unless explicitly selected in its shared URL.
 
 Offline automated tests cover multi-page discovery, untagged continuations,
 deduplication and tagged branches, exact request-budget/resume behavior,

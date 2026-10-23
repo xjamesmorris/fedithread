@@ -73,3 +73,48 @@ test('conflicting or invalid collection selectors return the index with an expla
   }
   assert.equal(seriesShareUrl(BASE, { host: 'x.test', acct: 'a', tag: 'x' }, { post: '1', view: 'all' }), null);
 });
+
+test('navigation-pane links round-trip the layout and selected article without reader settings', () => {
+  const target = { host: 'mastodon.social', acct: 'pid_eins', tag: 'systemd262' };
+  for (const selection of [{}, { post: '117207780226511430' }, { view: 'all' }]) {
+    const route = { ...selection, layout: 'sidebar' };
+    const link = seriesShareUrl(`${BASE}?home=private.example&discussion=true#old`, target, route);
+    const url = new URL(link);
+    assert.equal(url.searchParams.get('layout'), 'sidebar');
+    assert.deepEqual(seriesRoute(link), { post: selection.post || '', view: selection.view || '', layout: 'sidebar', warning: '' });
+    assert.equal(url.searchParams.has('home'), false);
+    assert.equal(url.searchParams.has('discussion'), false);
+    assert.equal(url.hash, '');
+  }
+  const standard = new URL(seriesShareUrl(BASE, target, { post: '1', layout: '' }));
+  assert.equal(standard.searchParams.has('layout'), false);
+  assert.equal(standard.searchParams.get('post'), '1');
+});
+
+test('invalid layout selectors preserve a valid article or Read all selection with an explanation', () => {
+  const warning = 'That navigation layout is invalid. Using the standard layout instead.';
+  for (const layout of ['layout=unknown', 'layout=sidebar&layout=sidebar']) {
+    assert.deepEqual(seriesRoute(`${BASE}?post=123&${layout}`), { post: '123', view: '', warning });
+    assert.deepEqual(seriesRoute(`${BASE}?view=all&${layout}`), { post: '', view: 'all', warning });
+  }
+  assert.equal(seriesShareUrl(BASE, { host: 'x.test', acct: 'a', tag: 'x' }, { layout: 'unknown' }), null);
+});
+
+test('joined-text selection round-trips alone or alongside the navigation pane', () => {
+  const target = { host: 'x.test', acct: 'author', tag: 'works' };
+  for (const selection of [{}, { post: '123' }, { post: '123', layout: 'sidebar' }, { view: 'all', layout: 'sidebar' }]) {
+    const url = seriesShareUrl(BASE, target, { ...selection, join: true });
+    assert.equal(new URL(url).searchParams.get('join'), '1');
+    assert.deepEqual(seriesRoute(url), { post: selection.post || '', view: selection.view || '', ...(selection.layout ? { layout: selection.layout } : {}), join: true, warning: '' });
+  }
+  assert.equal(new URL(seriesShareUrl(BASE, target, { join: false })).searchParams.has('join'), false);
+  assert.equal(seriesShareUrl(BASE, target, { join: 'false' }), null);
+});
+
+test('invalid continuation options preserve the valid article and layout', () => {
+  for (const query of ['join=unknown', 'join=1&join=1']) {
+    assert.deepEqual(seriesRoute(`${BASE}?post=123&layout=sidebar&${query}`), {
+      post: '123', view: '', layout: 'sidebar', warning: 'That continuation option is invalid. Showing separate source posts.',
+    });
+  }
+});

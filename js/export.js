@@ -222,6 +222,8 @@ function postOf(status, host, content) {
   const acct = status.account || {};
   return {
     id: status.id,
+    parentId: status.in_reply_to_id || null,
+    accountId: acct.id || '',
     url: status.url || status.uri || '',
     uri: status.uri || '',
     date: fmtDate(status.created_at),
@@ -317,6 +319,84 @@ export function buildExport(tree, main, { rootId, host, includeForks = true, con
   };
 }
 
+function paragraphBlocks(html) {
+  const out = [];
+  let inline = [];
+  const flush = () => {
+    if (inline.some((n) => n.text == null || n.text.trim())) out.push({ tag: 'p', attrs: {}, children: inline });
+    inline = [];
+  };
+  for (const node of parseHtml(html)) {
+    if (BLOCK.has(node.tag)) { flush(); out.push(node); }
+    else inline.push(node);
+  }
+  flush();
+  return out;
+}
+
+const PROSE_INLINE = new Set(['p', 'span', 'strong', 'b', 'em', 'i', 'u', 's', 'del', 'sup', 'sub']);
+
+function edgeProse(node, end) {
+  if (node.text != null) return node.text.trim() ? node : undefined;
+  if (classes(node).has('invisible')) return undefined;
+  if (!PROSE_INLINE.has(node.tag) || classes(node).has('ellipsis')) return null;
+  for (const child of end ? [...node.children].reverse() : node.children) {
+    const edge = edgeProse(child, end);
+    if (edge !== undefined) return edge;
+  }
+  return undefined;
+}
+
+function trimProseEdge(node, end) {
+  if (node.text != null) {
+    node.text = end ? node.text.trimEnd() : node.text.trimStart();
+    return !!node.text;
+  }
+  if (classes(node).has('invisible')) return false;
+  if (!PROSE_INLINE.has(node.tag)) return true;
+  for (const child of end ? [...node.children].reverse() : node.children) {
+    if (trimProseEdge(child, end)) return true;
+  }
+  return false;
+}
+
+// Input uses the same already-sanitised HTML contract as buildExport.
+export function joinContinuationPosts(posts) {
+  const groups = [];
+  for (const post of posts) {
+    const previous = groups.at(-1);
+    const last = previous?.sourcePosts.at(-1);
+    const sameAuthor = last && (last.accountId
+      ? last.accountId === post.accountId
+      : last.author?.handle && last.author.handle === post.author?.handle);
+    const canJoin = last && post.parentId === last.id && sameAuthor
+      && last.cw === post.cw && !last.media.length && !post.media.length && !last.poll && !post.poll;
+    const nodes = paragraphBlocks(post.html);
+    if (!canJoin) {
+      groups.push({ ...post, nodes, sourcePosts: [post] });
+      continue;
+    }
+    const left = previous.nodes.at(-1);
+    const right = nodes[0];
+    const tail = left?.tag === 'p' ? edgeProse(left, true) : null;
+    const head = right?.tag === 'p' ? edgeProse(right, false) : null;
+    const end = tail?.text.match(/(?:\.{3}|\u2026)\s*$/u);
+    const start = head?.text.match(/^\s*(?:\.{3}|\u2026)/u);
+    if (end && start) {
+      tail.text = tail.text.slice(0, end.index).trimEnd();
+      head.text = head.text.slice(start[0].length).trimStart();
+      trimProseEdge(left, true);
+      trimProseEdge(right, false);
+      if (textOf(left.children).trim() && textOf(right.children).trim()) left.children.push({ text: ' ' });
+      left.children.push(...right.children);
+      nodes.shift();
+    }
+    previous.nodes.push(...nodes);
+    previous.sourcePosts.push(post);
+  }
+  return groups.map(({ nodes, ...group }) => ({ ...group, html: htmlNodes(nodes) }));
+}
+
 export function suggestedFileName(model, ext) {
   const slug = model.title.toLowerCase().normalize('NFKD').replace(/[^\w\s-]/g, '').trim().replace(/[\s_-]+/g, '-').slice(0, 60).replace(/-+$/, '');
   return `${slug || `thread-${model.posts[0]?.id || 'export'}`}.${ext}`;
@@ -363,7 +443,7 @@ function mdMeta(p, { showAuthor, replyTo }) {
   return `<sub>${bits.join(' · ')}</sub>`;
 }
 
-export function toMarkdown(model, { frontMatter = true, headingLevel = 1, emojiImages = false, navigation = '' } = {}) {
+export function toMarkdown(model, { frontMatter = true, headingLevel = 1, emojiImages = false, navigation = '', joinContinuations = false } = {}) {
   const out = [];
   if (frontMatter) {
     out.push('---');
@@ -379,10 +459,18 @@ export function toMarkdown(model, { frontMatter = true, headingLevel = 1, emojiI
   const src = model.url ? ` · [Original thread](${mdUrl(model.url)})` : '';
   out.push(`By ${by} ${escapeMd(model.author.handle)} · ${model.date}${src}`, '');
 
-  for (const p of model.posts) {
-    if (emojiImages) out.push(`<a id="s-${escHtml(p.id)}"></a>`, '');
+  const displayed = joinContinuations ? joinContinuationPosts(model.posts) : model.posts;
+  for (const p of displayed) {
+    if (emojiImages || joinContinuations) {
+      for (const source of p.sourcePosts || [p]) out.push(`<a id="s-${escHtml(source.id)}"></a>`, '');
+    }
     out.push(mdPostBody(p, { emojiImages, headingOffset: headingLevel + 1 }), '');
-    out.push(mdMeta(p, { showAuthor: p.author.handle !== model.author.handle }), '');
+    if (!joinContinuations) out.push(mdMeta(p, { showAuthor: p.author.handle !== model.author.handle }), '');
+  }
+  if (joinContinuations) {
+    out.push(`<details>\n<summary>Source posts (${model.posts.length})</summary>`, '');
+    for (const p of model.posts) out.push(mdMeta(p, { showAuthor: p.author.handle !== model.author.handle }), '');
+    out.push('</details>', '');
   }
 
   if (model.replies.length) {
@@ -480,7 +568,7 @@ function htmlMeta(p, { showAuthor, replyTo }) {
   return `<p class="meta">${bits.join(' · ')}</p>`;
 }
 
-export function toHtml(model, { fragment = false, headingLevel = 1, styleHref = '', navigation = '', collapseReplies = false } = {}) {
+export function toHtml(model, { fragment = false, headingLevel = 1, styleHref = '', navigation = '', collapseReplies = false, joinContinuations = false } = {}) {
   const out = [];
   if (!fragment) {
     out.push('<!doctype html>', '<html lang="en">', '<head>', '<meta charset="utf-8">', '<meta name="viewport" content="width=device-width, initial-scale=1">');
@@ -494,11 +582,20 @@ export function toHtml(model, { fragment = false, headingLevel = 1, styleHref = 
   const src = model.url ? ` · <a href="${escHtml(model.url)}">Original thread</a>` : '';
   out.push(`<p class="byline">By ${by} ${escHtml(model.author.handle)} · <time datetime="${escHtml(model.iso || '')}">${escHtml(model.date)}</time>${src}</p>`, '</header>');
 
-  for (const p of model.posts) {
+  const displayed = joinContinuations ? joinContinuationPosts(model.posts) : model.posts;
+  for (const p of displayed) {
     out.push(`<section class="post" id="s-${escHtml(p.id)}">`);
+    if (joinContinuations) {
+      for (const source of p.sourcePosts.slice(1)) out.push(`<span id="s-${escHtml(source.id)}"></span>`);
+    }
     out.push(htmlPostBody(p));
-    out.push(htmlMeta(p, { showAuthor: p.author.handle !== model.author.handle }));
+    if (!joinContinuations) out.push(htmlMeta(p, { showAuthor: p.author.handle !== model.author.handle }));
     out.push('</section>');
+  }
+  if (joinContinuations) {
+    out.push(`<details class="source-posts"><summary>Source posts (${model.posts.length})</summary>`);
+    for (const p of model.posts) out.push(htmlMeta(p, { showAuthor: p.author.handle !== model.author.handle }));
+    out.push('</details>');
   }
 
   if (model.replies.length) {
@@ -535,7 +632,7 @@ export function safeHttpUrl(value) {
   }
 }
 
-export function buildSeriesExport(snapshot, { content }) {
+export function buildSeriesExport(snapshot, { content, joinContinuations = false }) {
   const articles = snapshot.articles.map((article) => {
     const model = buildExport(article.tree, article.main, {
       rootId: article.id, host: snapshot.target.host, content,
@@ -558,7 +655,7 @@ export function buildSeriesExport(snapshot, { content }) {
   return {
     title: snapshot.title, source: snapshot.source, author: snapshot.account?.acct || snapshot.target.acct,
     tag: snapshot.target.tag, fetchedAt: snapshot.fetchedAt, includeDiscussion: snapshot.includeDiscussion,
-    warnings: snapshot.warnings, complete: snapshot.complete, articles,
+    warnings: snapshot.warnings, complete: snapshot.complete, articles, joinContinuations,
   };
 }
 
@@ -591,6 +688,7 @@ function mapDocument(model, article, assets, { format, combined = false }) {
   };
   const post = (p) => ({
     ...p, id: prefix + archiveId(p.id), html: rewrite(p.html),
+    parentId: p.parentId ? prefix + archiveId(p.parentId) : null,
     replyTo: p.replyTo ? { ...p.replyTo, id: prefix + archiveId(p.replyTo.id) } : undefined,
     media: p.media.map((m) => {
       if (m.type !== 'image') return m;
@@ -634,11 +732,11 @@ export function seriesDocuments(model, { format, assets = new Map(), omissions =
     const page = mapDocument(model, article, assets, { format });
     const all = mapDocument(model, article, assets, { format, combined: true });
     if (format === 'html') {
-      files.set(`posts/${article.file}.html`, toHtml(page, { styleHref: '../assets/style.css', navigation, collapseReplies: true }));
-      combined.push(`<section class="entry" id="entry-${article.file}">${toHtml(all, { fragment: true, headingLevel: 2, collapseReplies: true })}</section>`);
+      files.set(`posts/${article.file}.html`, toHtml(page, { styleHref: '../assets/style.css', navigation, collapseReplies: true, joinContinuations: model.joinContinuations }));
+      combined.push(`<section class="entry" id="entry-${article.file}">${toHtml(all, { fragment: true, headingLevel: 2, collapseReplies: true, joinContinuations: model.joinContinuations })}</section>`);
     } else {
-      files.set(`posts/${article.file}.md`, toMarkdown(page, { emojiImages: true, navigation }));
-      combined.push(`<a id="entry-${article.file}"></a>\n\n${toMarkdown(all, { frontMatter: false, headingLevel: 2, emojiImages: true })}`);
+      files.set(`posts/${article.file}.md`, toMarkdown(page, { emojiImages: true, navigation, joinContinuations: model.joinContinuations }));
+      combined.push(`<a id="entry-${article.file}"></a>\n\n${toMarkdown(all, { frontMatter: false, headingLevel: 2, emojiImages: true, joinContinuations: model.joinContinuations })}`);
     }
   }
   const contentsHtml = `<ol>${model.articles.map((a) => `<li><a href="#entry-${a.file}">${escHtml(a.title)}</a></li>`).join('')}</ol>`;
@@ -648,7 +746,7 @@ export function seriesDocuments(model, { format, assets = new Map(), omissions =
     : `${headerMd}[Index](${indexName})\n\n${contentsMd}\n\n${combined.join('\n')}`);
   files.set('manifest.json', JSON.stringify({
     formatVersion: 1, source: model.source, author: model.author, tag: model.tag, format,
-    fetchedAt: model.fetchedAt, exportedAt, partial, includeDiscussion: model.includeDiscussion,
+    fetchedAt: model.fetchedAt, exportedAt, partial, includeDiscussion: model.includeDiscussion, joinContinuations: !!model.joinContinuations,
     warnings, omissions,
     articles: model.articles.map((a) => ({ id: a.id, file: `posts/${a.file}.${format}`, source: a.url, statuses: a.posts.map((p) => p.id), replies: a.replies.map((p) => p.id) })),
     assets: [...assets].map(([url, asset]) => ({ source: url, file: asset.path })),

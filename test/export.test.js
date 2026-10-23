@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { buildTree, classifyNodes } from '../js/thread.js';
 import {
   parseHtml, decodeEntities, htmlToText, htmlToMarkdown, cleanHtml,
-  buildExport, toMarkdown, toHtml, suggestedFileName, threadTitle,
+  buildExport, toMarkdown, toHtml, suggestedFileName, threadTitle, joinContinuationPosts,
 } from '../js/export.js';
 
 // --- parsing -------------------------------------------------------------
@@ -268,4 +268,79 @@ test('orphaned replies export under a missing-post marker and are counted in the
   const without = buildExport(tree, main, { rootId: '1', host: 'h.example', includeForks: false, content: (s) => s.content });
   assert.equal(without.replies.length, 0);
   assert.deepEqual(without.notes, ['1 reply answers a post that could not be fetched']);
+});
+
+function proseModel(contents) {
+  t = 0;
+  const tree = buildTree(contents.map((html, i) => st(String(i + 1), i ? String(i) : null, 'op', html)));
+  return buildExport(tree, classifyNodes(tree, '1', '1'), { rootId: '1', host: 'h.example', includeForks: false, content: (s) => s.content });
+}
+
+test('joins paired continuation ellipses into a single space without mutating source posts', () => {
+  for (const contents of [
+    ['<p>the cat...</p>', '<p>...sat on the mat</p>'],
+    ['the cat...', '...sat on the mat'],
+  ]) {
+    const m = proseModel(contents);
+    const before = structuredClone(m.posts);
+    const joined = joinContinuationPosts(m.posts);
+    assert.equal(joined.length, 1);
+    assert.equal(joined[0].html, '<p>the cat sat on the mat</p>');
+    assert.deepEqual(joined[0].sourcePosts.map((p) => p.id), ['1', '2']);
+    assert.deepEqual(m.posts, before);
+  }
+});
+
+test('joins Unicode ellipses across inline formatting and retains real paragraph breaks', () => {
+  const joined = joinContinuationPosts(proseModel([
+    '<p>Earlier paragraph.</p><p>The <strong>cat\u2026</strong> </p>',
+    '<p> \u2026<em>sat</em> on the mat.</p><p>Another paragraph.</p>',
+  ]).posts);
+  assert.equal(joined[0].html, '<p>Earlier paragraph.</p><p>The <strong>cat</strong> <em>sat</em> on the mat.</p><p>Another paragraph.</p>');
+  assert.equal(htmlToText(joined[0].html), 'Earlier paragraph.\nThe cat sat on the mat.\nAnother paragraph.');
+});
+
+test('genuine, unpaired, linked and code ellipses are not guessed away', () => {
+  for (const first of [
+    '<p>Wait... this is an ordinary sentence.</p>',
+    '<p><code>the cat...</code></p>',
+    '<p><a href="https://example.test/">the cat...</a></p>',
+    '<pre>the cat...</pre>',
+  ]) {
+    const joined = joinContinuationPosts(proseModel([first, '<p>...sat on the mat.</p>']).posts);
+    assert.ok(joined[0].html.includes('...sat on the mat.'));
+    assert.ok(joined[0].html.includes('...'));
+  }
+  assert.equal(joinContinuationPosts(proseModel(['<p>the cat...</p>', '<p>sat on the mat.</p>']).posts)[0].html, '<p>the cat...</p><p>sat on the mat.</p>');
+});
+
+test('warnings, media, polls, different authors and branches remain separate boundaries', () => {
+  const changes = [
+    (posts) => { posts[1].cw = 'A different warning'; },
+    (posts) => { posts[1].media.push({ type: 'image', url: 'https://example.test/a.png', alt: 'A picture' }); },
+    (posts) => { posts[0].poll = { total: 1, options: [], expired: true }; },
+    (posts) => { posts[1].accountId = 'someone-else'; },
+    (posts) => { posts[1].parentId = 'an-unrelated-post'; },
+  ];
+  for (const change of changes) {
+    const m = proseModel(['<p>the cat...</p>', '<p>...sat on the mat.</p>']);
+    change(m.posts);
+    assert.equal(joinContinuationPosts(m.posts).length, 2);
+  }
+});
+
+test('joined HTML and Markdown retain source links, anchors and the original source count', () => {
+  const m = proseModel(['<p>the cat...</p>', '<p>...sat on the mat.</p>']);
+  const html = toHtml(m, { joinContinuations: true });
+  const md = toMarkdown(m, { joinContinuations: true });
+  assert.ok(html.includes('<p>the cat sat on the mat.</p>'));
+  assert.ok(md.includes('\nthe cat sat on the mat.\n'));
+  for (const text of [html, md]) {
+    assert.ok(text.includes('Source posts (2)'));
+    assert.ok(text.includes('id="s-1"') && text.includes('id="s-2"'));
+    assert.ok(text.includes('https://h.example/@op/1') && text.includes('https://h.example/@op/2'));
+    assert.ok(text.includes('2 posts'));
+  }
+  assert.ok(toHtml(m).includes('<p>...sat on the mat.</p>'), 'default output stays unjoined');
+  assert.ok(toMarkdown(m).includes('\n...sat on the mat.\n'), 'default Markdown stays unjoined');
 });
